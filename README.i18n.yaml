@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write plugins/dsh-reflection/README.md
+/:
+  en: ee4c72ea7a4c1175
+  zh: 3d5ecc8865b14a94
+/dsh-reflection:
+  en: 225a3b208451addb
+  zh: f6699562c19ea676
+/dsh-reflection/summary:
+  en: 92a789d7cf1f9605
+  zh: 92770e86e29837c1
+/dsh-reflection/use-this-plugin:
+  en: b3556612ee3ed311
+  zh: 1dd80062d7dd0f82
+/dsh-reflection/use-this-plugin/where-memory-lives:
+  en: 64f6d7687e6fbf04
+  zh: 917d9305a37e398a
+/dsh-reflection/use-this-plugin/what-the-model-gets:
+  en: 726a73637ad1cef4
+  zh: cc185b6c30063cb2
+/dsh-reflection/use-this-plugin/commands:
+  en: bd0da0ffa6df2c23
+  zh: bc64b2e1a24ebefe
+/dsh-reflection/use-this-plugin/configuration:
+  en: 4c63c95c0a261a01
+  zh: 6a6931483b5420df
+/dsh-reflection/use-this-plugin/project-identity:
+  en: 958a3d2248f9e133
+  zh: ee38df2d8ee692fe
+/dsh-reflection/use-this-plugin/trajectory-rows:
+  en: ac6625246cefea44
+  zh: 2fb7c17686244fb4
+/dsh-reflection/understand-the-implementation:
+  en: cb569b4f2b00ea45
+  zh: 6786f5f17207e8c4
+/dsh-reflection/model-experience:
+  en: 2cd2a68f9b56e8eb
+  zh: b8fbdd50ee30723b
+/dsh-reflection/known-limitations-and-deferred-work:
+  en: 0deccd5bf7a8db8c
+  zh: aeb697d6b07a134a
+/dsh-reflection/tests:
+  en: 2cbf3d66d429d74d
+  zh: d7e01d284cdfbbe3
+/dsh-reflection/tests/development-loop:
+  en: 5866d403bc5d3611
+  zh: 76a8f9df1ee73c5a
+/dsh-reflection/tests/checking-the-automatic-path-by-hand:
+  en: 3b1abc63639f9ed1
+  zh: 3f96563c8e653732

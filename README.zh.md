@@ -15,7 +15,7 @@ kind: "plugin-reference"
 
 自动学习不是什么：它不在用户工作时运行；不会每次重读整个 Session；也不会存储任何无法在轨迹里指出出处的东西。
 
-Memory 也会自己留痕。打开 `sessionEvents` 后，每次 consolidation 运行、以及 Session 被归属到哪个项目，都会写进 Session 日志，由 Web UI 渲染成轨迹账本里的一行 —— 见[轨迹行](#轨迹行)。
+Memory 也会自己留痕。打开 `sessionEvents` 后，每次 consolidation 运行、以及 Session 被归属到哪个项目，都会写进 Session 日志，由 Web UI 渲染成轨迹账本里的一行 —— 见 [Trajectory rows](#trajectory-rows)。
 
 本插件实现的契约 —— 存储位置、数据模型、操作语义、并发保证与验收标准 —— 是 [CONTRACT.md](CONTRACT.md)，测试按它编写。
 
@@ -24,7 +24,7 @@ Memory 也会自己留痕。打开 `sessionEvents` 后，每次 consolidation �
 把 bundle 装进某个 profile，该 profile 里就有 `/memory`：
 
 ```sh
-dsh plugin --profile <name> add link:<本目录路径>
+dsh plugin --profile <name> add link:<path to this directory>
 ```
 
 运行时不 import 任何 harness 包，因此没有依赖安装步骤。
@@ -35,16 +35,16 @@ dsh plugin --profile <name> add link:<本目录路径>
 
 ```text
 $DSH_HOME/memory/
-├── config.json          # 本插件自己的开关键
-├── consolidation-state.json  # 自动学习：每个 Session 的 mark 与 gap
-├── registry.json        # project identity：id ↔ 路径
+├── config.json          # this plugin's own enable/disable switch
+├── consolidation-state.json  # automatic learning: mark and gaps per Session
+├── registry.json        # project identity: id ↔ paths
 ├── user/
 │   ├── memories.json    # canonical
-│   └── MEMORY.md        # 生成的视图
+│   └── MEMORY.md        # generated view
 ├── projects/<project_id>/
 │   ├── memories.json
 │   └── MEMORY.md
-└── tombstones.jsonl     # 不含正文的删除留痕
+└── tombstones.jsonl     # body-free record of deletions
 ```
 
 `memories.json` 是唯一事实来源。`MEMORY.md` 是生成的，且只展示 active Memory；手改它不会生效。
@@ -138,7 +138,7 @@ project:
 
 路径会移动。`/memory project relink <old> <new>` 让同一个 project id 指向新目录，并把旧路径留作 alias，因此 Memory 能挺过这次移动。
 
-### 轨迹行
+### Trajectory rows
 
 打开 `sessionEvents` 后，Web UI 的轨迹账本会展示本插件做了什么，一条事件一行：
 
@@ -183,10 +183,10 @@ project:
 ## 测试
 
 ```sh
-npm run test:unit        # 全部 unit 套件，不走网络、不需要 API key
-npm run test             # test:unit，之后跑浏览器半的 smoke 测试
-npm run test:integration # 通过真实 Loader 启动 shipped headless profile
-npm run test:all         # test，之后 integration
+npm run test:unit        # every unit suite, no network, no API key
+npm run test             # test:unit, then the browser-half smoke test
+npm run test:integration # boots the shipped headless profile through the real Loader
+npm run test:all         # test, then integration
 ```
 
 `test/client.smoke.mjs` 在浏览器之外加载 `client/client.js`，走的是 Client runtime 同一条注册路径。它按宿主半写事件的方式构造出两类事件并渲染出对应的行，同时对浏览器半守住两条规矩：行里的每一个词都能在中英文字典里查到，以及不请求任何 Harness Client 包。把 `DSH_CHECKOUT` 指向一个已构建 client 库的 checkout 时，它还会把两个定义注册进真实的 Conversation registry，并把结果推过真实的轨迹投射 —— 于是轨迹侧不再接受某一行时，失败发生在这里，而不是在浏览器里。
@@ -198,10 +198,10 @@ npm run test:all         # test，之后 integration
 源码是 TypeScript，而 profile 加载的是编译后的 JavaScript —— 所以**改完要先 build，重启才看得到**：
 
 ```sh
-npm run build        # tsdown 把运行时打包成 lib/index.mjs
-npm run declarations # tsc 在旁边产出 .d.ts
-npm run typecheck    # 报告类型债；它不拦任何东西
-npm run test:unit    # 跑套件，走 tsx，不需要 build
+npm run build        # tsdown bundles the runtime into lib/index.mjs
+npm run declarations # tsc emits the .d.ts files beside it
+npm run typecheck    # reports the type debt; it does not gate anything
+npm run test:unit    # runs the suites, through tsx, with no build
 ```
 
 `tsc` 做不到"既产出又忽略类型错误"，所以运行时交给转译器、`tsc` 只管类型 —— harness 自己也是这么构建的。正是这个分工让源码可以**逐模块**类型化：没做完的模块会在 `typecheck` 里报错，但不会挡住构建或重启。`npm run prepare` 会在安装时构建，因此 `link:` 依赖在被加载之前就已经有 `lib/` 了。
@@ -213,7 +213,7 @@ npm run test:unit    # 跑套件，走 tsx，不需要 build
 有一种行为任何脚本化运行都展示不了：debounce。它按设计等在 agent 的 maintenance 之外，而一次性运行会先退出。要观察它，需要一个长驻 profile、一条真实账号路由，以及一个除了等待什么都不做的进程：
 
 ```sh
-dsh --profile <装有 dsh-reflection 的 web 类 profile> --patch <overlay> --no-open
+dsh --profile <a web-based profile with dsh-reflection> --patch <overlay> --no-open
 ```
 
 `test/fixtures/real-trigger-probe.ts` 就是这个进程。在它的 config 里给出任务文本与报告路径后，它会驱动一轮、等过 debounce 而不调用任何东西、关闭 Memory、再驱动第二轮，并把每一步写进报告。该看两处：
