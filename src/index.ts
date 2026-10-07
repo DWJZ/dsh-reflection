@@ -28,6 +28,7 @@ import { readRegistry, resolveProject } from './registry.js'
 import { cleanupStaleTemps, readStore } from './jsonstore.js'
 import { rebuildView } from './views.js'
 import { buildProvenance, createTurnTracker, registerMemoryIndex, registerMemoryPolicy } from './inject.js'
+import { createInstructionReplay, registerInstructionReplay } from './replay.js'
 import { registerMemoryTools } from './tools.js'
 import { registerMemoryCommands } from './commands.js'
 import { renderMemoryIndex } from './retention.js'
@@ -94,6 +95,9 @@ function createController(ctx: Context, settings: MemorySettings) {
   const tombstones = tombstoneLayout(settings.memoryDir)
   const logger = ctx.logger
   const tracker = createTurnTracker(ctx)
+  // Instructions live in history, so a compaction folds the older copies into its
+  // summary. This slot keeps the newest copy of each scope for one replay.
+  const replay = createInstructionReplay()
   // Keyed by working directory, not by session: several agents can share one
   // session — the auxiliary agent that names it runs elsewhere — and the last one
   // created must not decide which project the others write to.
@@ -153,6 +157,8 @@ const PROJECT_EVENT_TYPE = 'dsh-reflection/project'
     runtimeFiber = ctx.inject(['systemPrompt', 'tools'], (scope) => {
       registerMemoryPolicy(scope)
       registerMemoryIndex(scope, (agent: MemoryAgent) => renderIndex(deps, agent))
+      // Same budget as the index: a replay is injected text like any other.
+      registerInstructionReplay(scope, replay, deps.config.indexBudgetBytes)
       registerMemoryTools(scope, deps)
     })
   }
@@ -317,6 +323,9 @@ const PROJECT_EVENT_TYPE = 'dsh-reflection/project'
       // `/memory consolidate`, which a person runs deliberately.
       const learningOnItsOwn = () => collecting() && settings.consolidation.autoCommit === true
       const disposeEvents = ctx.on('session/event', (session: MemorySession, event) => {
+        replay.observe(String(session.id), event)
+        // The model has answered with the replay in view, so it is delivered once.
+        if (event.type === 'assistant/message') replay.clear(String(session.id))
         if (collecting()) consolidation.observe(session, event)
       })
       const disposeStatus = ctx.on('agent/status', ({ agent, status }) => {

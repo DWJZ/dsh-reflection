@@ -76,7 +76,9 @@ check('the command is named memory', ctx.registrations.commands[0].name === 'mem
 check('three tools are registered', ctx.registrations.tools.length === 3)
 check('the tools are the documented three',
   ctx.registrations.tools.map(definition => definition.name).sort().join(',') === 'memory_get,memory_remember,memory_search')
-check('the index context is registered', ctx.registrations.contexts.length === 1)
+check('the index and the replay contexts are registered',
+  ctx.registrations.contexts.length === 2
+  && ctx.registrations.contexts.map(context => context.name).sort().join(',') === 'memory:index,memory:replay')
 check('the context is named memory:index', ctx.registrations.contexts[0].name === 'memory:index')
 check('the context has a numeric order', Number.isFinite(ctx.registrations.contexts[0].order))
 check('the plugin owns its registrations as effects', ctx.registrations.effects === 2)
@@ -334,14 +336,14 @@ check('the usage text reports the disabled state', String((await runCommand(ctx,
 console.log('enable restores the runtime')
 const reenabled = await runCommand(ctx, 'enable')
 check('the command reports success', reenabled.kind === 'success')
-check('the index is back', ctx.registrations.contexts.length === 1)
+check('the index is back', ctx.registrations.contexts.length === 2)
 check('the tools are back', ctx.registrations.tools.length === 3)
 check('the choice is persisted', JSON.parse(readFileSync(pluginConfigPath(MEMORY), 'utf8')).enabled === true)
 
 console.log('a stored choice outlives the process')
 const restarted = start({ ...CONFIG, enabled: false })
 check('the persisted switch wins over the deployment config',
-  restarted.registrations.contexts.length === 1 && restarted.registrations.tools.length === 3)
+  restarted.registrations.contexts.length === 2 && restarted.registrations.tools.length === 3)
 await runCommand(restarted, 'disable')
 const restartedAgain = start(CONFIG)
 check('a fresh start honours the stored switch', restartedAgain.registrations.tools.length === 0)
@@ -515,7 +517,7 @@ check('enabling creates exactly one live injection', liveFibers() === 1)
 await runCommand(fiberCtx, 'disable')
 await runCommand(fiberCtx, 'enable')
 check('a second cycle still leaves exactly one live injection', liveFibers() === 1)
-check('the index is registered once', fiberCtx.registrations.contexts.length === 1)
+check('the index is registered once', fiberCtx.registrations.contexts.length === 2)
 check('the tools are registered three times, once', fiberCtx.registrations.tools.length === 3)
 check('every injection ever created is accounted for',
   runtimeInjections(fiberCtx).length === 3 && liveFibers() === 1)
@@ -548,7 +550,7 @@ await runCommand(lateMountCtx, 'enable')
 const lateFiber = runtimeInjections(lateMountCtx)[0]
 check('enabling with the services absent leaves the fiber pending', lateFiber.state === 'pending')
 check('mounting the services starts it', lateMountCtx.provideServices('systemPrompt', 'tools') === 1)
-check('the index registered once the services arrived', lateMountCtx.registrations.contexts.length === 1)
+check('the index registered once the services arrived', lateMountCtx.registrations.contexts.length === 2)
 check('the tools registered once the services arrived', lateMountCtx.registrations.tools.length === 3)
 await runCommand(lateMountCtx, 'disable')
 await disposeEffects(lateMountCtx)
