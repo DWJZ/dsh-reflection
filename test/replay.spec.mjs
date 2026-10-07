@@ -14,7 +14,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const { createInstructionReplay, registerInstructionReplay, REPLAY_NAME, REPLAY_ORDER, REPLAY_HEADING } =
+const { createInstructionReplay, registerInstructionReplay, REPLAY_NAME, REPLAY_ORDER, REPLAY_HEADING, REPLAY_INSTRUCTION_LEAD, REPLAY_CATALOG_LEAD } =
   await import(pathToFileURL(join(PLUGIN, 'src/replay.js')).href)
 
 let failures = 0
@@ -85,7 +85,7 @@ const wide = '中'.repeat(20)
 bytes.observe(SESSION, publication(5, scope, wide, 'd5'))
 bytes.observe(SESSION, compaction(1, 10))
 // Budget the heading plus room for exactly two CJK characters: three bytes each.
-const budget = Buffer.byteLength(REPLAY_HEADING, 'utf8') + 6
+const budget = Buffer.byteLength(REPLAY_HEADING + '\n' + REPLAY_INSTRUCTION_LEAD, 'utf8') + 6
 const trimmed = bytes.render(agent, budget)
 check('the trimmed replay fits its byte budget', Buffer.byteLength(trimmed, 'utf8') <= budget,
   `${String(Buffer.byteLength(trimmed, 'utf8'))} bytes`)
@@ -104,6 +104,52 @@ wired.observe(SESSION, publication(5, scope, '装配期规则', 'd6'))
 wired.observe(SESSION, compaction(1, 10))
 check('the assembler sees the replay', entry.text({ agent }).includes('装配期规则'))
 check('an agent for another Session sees nothing', entry.text({ agent: { session: { id: 'other' } } }) === '')
+
+console.log('the skill catalog is replayed too')
+/** One catalog publication, shaped as tool-skill writes it. */
+const catalogMessage = (seq, entries, text) => ({
+  type: 'user/message',
+  seq,
+  data: {
+    source: { kind: 'skill-catalog', form: 'catalog', entries },
+    content: [{ type: 'text', text }],
+  },
+})
+const SKILLS = [
+  { name: 'office-xlsx', description: 'Read and write Excel workbooks.' },
+  { name: 'dsh-doc', description: 'Write DeepSeek Harness documentation.' },
+]
+const catalogText = `<available_skills>\n- office-xlsx\n- dsh-doc\n</available_skills>`
+
+const catalogOnly = createInstructionReplay()
+check('a catalog publication alone queues nothing',
+  catalogOnly.observe(SESSION, catalogMessage(5, SKILLS, catalogText)) === null)
+const catalogQueued = catalogOnly.observe(SESSION, compaction(1, 10))
+check('a compaction that consumed the catalog queues a replay',
+  catalogQueued !== null && catalogQueued.catalog?.count === 2)
+check('the rendered replay names the catalog and carries its text',
+  catalogOnly.render(agent, 10_000).includes(REPLAY_CATALOG_LEAD)
+  && catalogOnly.render(agent, 10_000).includes('<available_skills>'))
+check('the same entries are not queued twice', catalogOnly.observe(SESSION, compaction(1, 10)) === null)
+
+console.log('both kinds survive one compaction together')
+const together = createInstructionReplay()
+together.observe(SESSION, publication(5, scope, '规则正文', 'd7'))
+together.observe(SESSION, catalogMessage(6, SKILLS, catalogText))
+const merged = together.observe(SESSION, compaction(1, 10))
+check('one decision reports both kinds', merged !== null && merged.catalog?.count === 2
+  && merged.scope === scope)
+const rendered = together.render(agent, 10_000)
+check('the merged replay carries both leads and both bodies',
+  rendered.includes(REPLAY_HEADING) && rendered.includes(REPLAY_INSTRUCTION_LEAD)
+  && rendered.includes('规则正文') && rendered.includes(REPLAY_CATALOG_LEAD)
+  && rendered.includes('<available_skills>'))
+check('a catalog outside the shadowed range is not replayed', (() => {
+  const outside = createInstructionReplay()
+  outside.observe(SESSION, catalogMessage(50, SKILLS, catalogText))
+  return outside.observe(SESSION, compaction(1, 10)) === null
+    && outside.render(agent, 10_000) === ''
+})())
 
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)
 process.exit(failures === 0 ? 0 : 1)
