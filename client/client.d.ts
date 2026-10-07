@@ -113,7 +113,7 @@ interface TrajectoryRowOptions {
 
 /** The bundle's exports. The offline smoke test drives these directly. */
 interface DshMemoryClientExports {
-  /** Register the dictionaries and the two ledger rows. */
+  /** Register the dictionaries and the ledger rows. */
   apply(ctx: DshClientContext): void
   /** The client services this bundle waits for. */
   inject: string[]
@@ -131,6 +131,12 @@ interface DshMemoryClientExports {
   CONSOLIDATION_EVENT: string
   /** The Session event type the project row folds. */
   PROJECT_EVENT: string
+  /** One-line summary of a re-delivered context. */
+  replaySummary(payload: Record<string, unknown>, t: Translate): string
+  /** Build the replay row definition. */
+  createReplayRow(translate: Translate): DshTrajectoryRow
+  /** The Session event type the replay row folds. */
+  REPLAY_EVENT: string
 }
 
 /** What the ledger hands a row while it folds or renders one node. */
