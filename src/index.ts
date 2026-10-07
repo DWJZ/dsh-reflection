@@ -28,7 +28,6 @@ import { readRegistry, resolveProject } from './registry.js'
 import { cleanupStaleTemps, readStore } from './jsonstore.js'
 import { rebuildView } from './views.js'
 import { buildProvenance, createTurnTracker, registerMemoryIndex, registerMemoryPolicy } from './inject.js'
-import { createInstructionReplay } from './replay.js'
 import { registerMemoryTools } from './tools.js'
 import { registerMemoryCommands } from './commands.js'
 import { renderMemoryIndex } from './retention.js'
@@ -95,17 +94,11 @@ function createController(ctx: Context, settings: MemorySettings) {
   const tombstones = tombstoneLayout(settings.memoryDir)
   const logger = ctx.logger
   const tracker = createTurnTracker(ctx)
-  // Instructions live in history, so a compaction folds the older copies into its
-  // summary. This slot keeps the newest copy of each scope for one replay.
-  const replay = createInstructionReplay()
   // Keyed by working directory, not by session: several agents can share one
   // session — the auxiliary agent that names it runs elsewhere — and the last one
   // created must not decide which project the others write to.
 /** Session event type carrying which project a Session was attributed to. */
 const PROJECT_EVENT_TYPE = 'dsh-reflection/project'
-
-/** Session event type recording one workspace-instruction replay. */
-const REPLAY_EVENT_TYPE = 'dsh-reflection/replay'
 
   const projectsByCwd = new Map()
   /** Sessions whose attribution was already recorded, so it is written once. */
@@ -324,50 +317,6 @@ const REPLAY_EVENT_TYPE = 'dsh-reflection/replay'
       // `/memory consolidate`, which a person runs deliberately.
       const learningOnItsOwn = () => collecting() && settings.consolidation.autoCommit === true
       const disposeEvents = ctx.on('session/event', (session: MemorySession, event) => {
-        const replayed = replay.observe(String(session.id), event)
-        if (replayed !== null) {
-          // Published as an ordinary user message, the way the instruction and catalog
-          // publishers deliver theirs: durable in the Session log, so it survives a
-          // restart too. Its `source.kind` keeps it distinguishable from a human turn,
-          // and the audit event below stays as the machine-readable record.
-          const text = replay.body(String(session.id), deps.config.indexBudgetBytes)
-          if (text !== '') {
-            // Three Session rules shape this call. An append made from inside a publish is
-            // refused ("cannot reenter while another append is being published"), so it is
-            // deferred to a microtask just outside that publish. A message-producing event
-            // must declare how it enters the surface, and must carry an identified message:
-            // a payload without an id fails validation and corrupts the log.
-            void Promise.resolve().then(() => {
-              try {
-                session.append('user/message', {
-                  id: `replay-${String(replayed.seq)}-${replayed.digest ?? 'na'}`,
-                  role: 'user',
-                  content: [{ type: 'text', text }],
-                  source: {
-                    kind: REPLAY_EVENT_TYPE,
-                    scope: replayed.scope,
-                    seq: replayed.seq,
-                    digest: replayed.digest ?? null,
-                    catalogEntries: replayed.catalog?.count ?? 0,
-                  },
-                }, { surfaceOp: 'append' })
-              } catch (failure: unknown) {
-                // A failed publication must not break the turn it was meant to inform.
-                logger.warn(`dsh-reflection: could not publish the replay: ${String(failure)}`)
-              }
-              // The ledger row folds this record, so it is deferred for the same reason:
-              // an append made inside a publish is refused. The replay itself already
-              // happened, so a missing record is reported and nothing else changes.
-              try {
-                session.append(REPLAY_EVENT_TYPE, replayed, { ignorable: true })
-              } catch (failure: unknown) {
-                logger.warn(`dsh-reflection: could not record the instruction replay: ${String(failure)}`)
-              }
-            })
-          }
-        }
-        // The model has answered with the replay in view, so it is delivered once.
-        if (event.type === 'assistant/message') replay.clear(String(session.id))
         if (collecting()) consolidation.observe(session, event)
       })
       const disposeStatus = ctx.on('agent/status', ({ agent, status }) => {

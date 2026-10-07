@@ -44,11 +44,6 @@ function note(step: string): void {
 export function apply(ctx: Context): void {
   note('applied')
   const done = new Set<string>()
-  // Probe: the ledger row folds this event, so it has to exist in the Session log.
-  ctx.on('session/event', ((_session: unknown, event: { type?: string; data?: { scope?: string } }) => {
-    if (event.type === 'dsh-reflection/replay') note(`audit:${String(event.data?.scope)}`)
-  }) as never)
-
   ctx.on('agent/status', ({ agent, status }) => {
     note(`status:${status}:seq=${String(agent.session.seq)}`)
     note(`session:${String(agent.session.id)}`)

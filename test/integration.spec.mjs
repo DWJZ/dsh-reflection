@@ -20,9 +20,6 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-// The replay's own heading exists only in a replay, so finding it in a request made
-// by a later process proves the durable delivery worked.
-const { REPLAY_HEADING } = await import(pathToFileURL(join(PLUGIN, 'src/replay.js')).href)
 const REPO = resolve(PLUGIN, '../..')
 const { readRegistry } = await import(pathToFileURL(join(PLUGIN, 'src/registry.js')).href)
 const { readStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.js')).href)
@@ -389,14 +386,6 @@ console.log('Memory survives a compaction')
 // user scope so that no project resolution can decide whether it is listed.
 const COMPACT_PROJECT = join(ROOT, 'compact-project')
 mkdirSync(join(COMPACT_PROJECT, '.git'), { recursive: true })
-// The replay has something to replay only when these inputs exist: the fixture
-// project ships neither workspace instructions nor a skill.
-const RULE = '始终使用 cargo 构建'
-writeFileSync(join(COMPACT_PROJECT, 'AGENTS.md'), `# 测试项目规则\n\n${RULE}\n`)
-const skillDir = join(COMPACT_PROJECT, '.dsh', 'skills', 'cargo-helper')
-mkdirSync(skillDir, { recursive: true })
-writeFileSync(join(skillDir, 'SKILL.md'),
-  '---\nname: cargo-helper\ndescription: Cargo 构建与依赖管理流程\n---\n\n构建：cargo build\n')
 const BULK = 'BULK-MARKER-'.repeat(2000)
 const FACT = '这个用户偏好用 cargo 构建'
 const reducing = await runSession({
@@ -408,7 +397,6 @@ const reducing = await runSession({
 })
 const compactSteps = readFileSync(`${reducing.log}.compact`, 'utf8')
 check('the compaction command ran', compactSteps.includes('handled:success'), compactSteps)
-check('the replay is recorded as an audit event', /audit:/u.test(compactSteps), compactSteps)
 const adopted = /^session:(.+)$/mu.exec(compactSteps)?.[1]
 check('the driver reported the Session it compacted',
   typeof adopted === 'string' && adopted !== '', compactSteps)
@@ -424,14 +412,6 @@ check('the index envelope is still assembled after the compaction',
   reducedRequest.includes('<memory-index>'))
 check('the index still carries the remembered fact after the compaction',
   reducedRequest.includes(FACT), reducedRequest.slice(-300))
-// The compaction ran in the earlier process, which published the replay there. This
-// run is a new process, so seeing the heading here is the cross-process proof.
-const replayedAt = reducedRequest.indexOf(REPLAY_HEADING)
-check('a later process still receives the replayed context', replayedAt >= 0,
-  reducedRequest.slice(-400))
-check('and the replay is delivered once inside that request',
-  replayedAt >= 0 && reducedRequest.indexOf(REPLAY_HEADING, replayedAt + 1) === -1,
-  reducedRequest.slice(-400))
 
 rmSync(ROOT, { recursive: true, force: true })
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)

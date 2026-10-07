@@ -52,11 +52,6 @@ window.__ModuleLoader__.load({
 			projectId: "项目 {id}",
 			workspaceId: "workspace {id}",
 			workspaceNone: "无 workspace",
-			replay: "规则重发",
-			replayScope: "范围 {scope}",
-			replayScopeRoot: "工作区根",
-			replayCatalog: "技能目录 {count} 项",
-			replayNoCatalog: "无技能目录"
 		};
 		/** @type {Record<string, string>} */
 		const en = {
@@ -84,11 +79,6 @@ window.__ModuleLoader__.load({
 			projectId: "project {id}",
 			workspaceId: "workspace {id}",
 			workspaceNone: "no workspace",
-			replay: "Context replay",
-			replayScope: "scope {scope}",
-			replayScopeRoot: "workspace root",
-			replayCatalog: "{count} catalog entries",
-			replayNoCatalog: "no skill catalog"
 		};
 		//#endregion
 
@@ -96,7 +86,6 @@ window.__ModuleLoader__.load({
 		/** Host-written event types this half renders. */
 		const CONSOLIDATION_EVENT = "dsh-reflection/consolidation";
 		const PROJECT_EVENT = "dsh-reflection/project";
-		const REPLAY_EVENT = "dsh-reflection/replay";
 		/** The one status that carries no operation counters. */
 		const GAP_STATUS = "gap";
 		/**
@@ -106,7 +95,6 @@ window.__ModuleLoader__.load({
 		 */
 		const SYMBOL_CONSOLIDATION = "\u{1F9E0}";
 		const SYMBOL_PROJECT = "\u{1F4C1}";
-		const SYMBOL_REPLAY = "\u{1F501}";
 		/** Status → dictionary key. Closed: an unlisted status reads as "other". */
 		/**
 		 * Keyed by the host's own vocabulary; the host may write a value this
@@ -443,49 +431,6 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * What one replay re-delivered: which scope, and whether a skill catalog came
-		 * with it. The row folds the plugin's own audit event, whose payload is the
-		 * decision it made.
-		 * @param {Record<string, unknown>} payload - the audit event payload.
-		 * @param {Translate} t - this namespace's translate function.
-		 * @returns the one-line summary the ledger renders.
-		 */
-		/**
-		 * @param {Record<string, unknown>} payload - the audit payload.
-		 * @param {Translate} t - this namespace's translate function.
-		 * @returns {string}.
-		 */
-		function replaySummary(payload, t) {
-			const scope = textOf(payload.scope);
-			const catalog = payload.catalog;
-			const entries = catalog !== null && typeof catalog === "object"
-				? countOf(/** @type {Record<string, unknown>} */ (catalog).count)
-				: 0;
-			return join(SYMBOL_REPLAY, [
-				t("replay"),
-				scope === "" ? t("replayScopeRoot") : t("replayScope").replace("{scope}", scope),
-				entries === 0 ? t("replayNoCatalog") : t("replayCatalog").replace("{count}", String(entries))
-			]);
-		}
-
-		/**
-		 * The replay row.
-		 * @param {Translate} translate - this namespace's translate function.
-		 * @returns {DshTrajectoryRow}.
-		 */
-		function createReplayRow(translate) {
-			return createTrajectoryRow({
-				kind: "trajectory-memory-replay",
-				eventType: REPLAY_EVENT,
-				idPrefix: "memory-replay",
-				// A re-delivery is a fact like an attribution: no emphasis, but findable.
-				toneOf: () => "neutral",
-				summarize: replaySummary,
-				translate
-			});
-		}
-
-		/**
 		 * The project-attribution row.
 		 * @param {Translate} translate - this namespace's translate function.
 		 * @returns the business definition.
@@ -525,8 +470,6 @@ window.__ModuleLoader__.load({
 				"dsh-reflection: consolidation definition");
 			ctx.effect(() => ctx.uiConversation.events.register(createProjectRow(translate)),
 				"dsh-reflection: project definition");
-			ctx.effect(() => ctx.uiConversation.events.register(createReplayRow(translate)),
-				"dsh-reflection: replay definition");
 		}
 
 		exports.apply = apply;
@@ -534,14 +477,11 @@ window.__ModuleLoader__.load({
 		// Exported for the offline smoke test.
 		exports.consolidationSummary = consolidationSummary;
 		exports.projectSummary = projectSummary;
-		exports.replaySummary = replaySummary;
 		exports.statusTone = statusTone;
 		exports.createConsolidationRow = createConsolidationRow;
 		exports.createProjectRow = createProjectRow;
-		exports.createReplayRow = createReplayRow;
 		exports.CONSOLIDATION_EVENT = CONSOLIDATION_EVENT;
 		exports.PROJECT_EVENT = PROJECT_EVENT;
-		exports.REPLAY_EVENT = REPLAY_EVENT;
 		//#endregion
 
 		return module.exports;

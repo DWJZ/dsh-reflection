@@ -103,15 +103,15 @@ const install = (locale) => {
 console.log('registration')
 const en = install('en')
 const zh = install('zh')
-check('three definitions are registered, one per event type',
-  en.definitions.length === 3, JSON.stringify(en.definitions.map(entry => entry.kind)))
+check('two definitions are registered, one per event type',
+  en.definitions.length === 2, JSON.stringify(en.definitions.map(entry => entry.kind)))
 check('both target the Trajectory ledger',
   en.definitions.every(entry => entry.target === 'trajectory'),
   JSON.stringify(en.definitions.map(entry => entry.target)))
 check('their kinds differ, because the registry keys definitions by kind alone',
   en.definitions[0].kind !== en.definitions[1].kind,
   `${String(en.definitions[0].kind)} / ${String(en.definitions[1].kind)}`)
-check('every contribution is an effect', en.effects.length === 4 && en.outsideEffect === 0,
+check('every contribution is an effect', en.effects.length === 3 && en.outsideEffect === 0,
   JSON.stringify(en.effects))
 check('the dictionary is registered once, for both languages, with the same keys',
   en.dictionaries.length === 1 && en.dictionaries[0].ns === 'dshMemory'
@@ -122,10 +122,8 @@ check('the dictionary is registered once, for both languages, with the same keys
 console.log('which events the rows claim')
 const consolidation = en.definitions.find(entry => entry.kind === 'trajectory-memory-consolidation')
 const project = en.definitions.find(entry => entry.kind === 'trajectory-memory-project')
-const replayRow = en.definitions.find(entry => entry.kind === 'trajectory-memory-replay')
 const consolidationEvent = (seq, data) => ({ type: client.CONSOLIDATION_EVENT, seq, time: 1_700_000_000_000, data })
 const projectEvent = (seq, data) => ({ type: client.PROJECT_EVENT, seq, time: 1_700_000_000_000, data })
-const replayEvent = (seq, data) => ({ type: client.REPLAY_EVENT, seq, time: 1_700_000_000_000, data })
 check('the consolidation row claims its own event type only',
   consolidation?.match(consolidationEvent(7, {}))?.role === 'start'
   && consolidation?.match(projectEvent(7, {})) === null
@@ -135,18 +133,9 @@ check('the project row claims its own event type only',
   project?.match(projectEvent(7, {}))?.role === 'start'
   && project?.match(consolidationEvent(7, {})) === null,
   JSON.stringify(project?.match(projectEvent(7, {}))))
-check('the replay row claims its own event type only',
-  replayRow?.match(replayEvent(7, {}))?.role === 'start'
-  && replayRow?.match(consolidationEvent(7, {})) === null
-  && replayRow?.match(projectEvent(7, {})) === null,
-  JSON.stringify(replayRow?.match(replayEvent(7, {}))))
-check('the rows are identified apart',
-  new Set([
-    consolidation?.match(consolidationEvent(7, {}))?.id,
-    project?.match(projectEvent(7, {}))?.id,
-    replayRow?.match(replayEvent(7, {}))?.id
-  ]).size === 3,
-  `${String(consolidation?.match(consolidationEvent(7, {}))?.id)} / ${String(project?.match(projectEvent(7, {}))?.id)} / ${String(replayRow?.match(replayEvent(7, {}))?.id)}`)
+check('the two rows are identified apart',
+  consolidation?.match(consolidationEvent(7, {}))?.id !== project?.match(projectEvent(7, {}))?.id,
+  `${String(consolidation?.match(consolidationEvent(7, {}))?.id)} / ${String(project?.match(projectEvent(7, {}))?.id)}`)
 
 /** One row built from one event, the way the assembler builds it. */
 const rowOf = (definition, event) => definition.buildViewNode({
