@@ -33,7 +33,15 @@ interface MemorySession {
    * Append one Session event. The plugin writes types the harness does not know,
    * which is why the payload is unconstrained and `ignorable` must be set.
    */
-  append(type: string, data: unknown, options?: { readonly ignorable?: boolean }): unknown
+  append(
+    type: string,
+    data: unknown,
+    options?: {
+      readonly ignorable?: boolean
+      /** How a message-producing event enters the surface; a bare append is refused. */
+      readonly surfaceOp?: string
+    },
+  ): unknown
 }
 
 /** The Agent members this plugin drives. */

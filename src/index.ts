@@ -332,21 +332,30 @@ const REPLAY_EVENT_TYPE = 'dsh-reflection/replay'
           // and the audit event below stays as the machine-readable record.
           const text = replay.body(String(session.id), deps.config.indexBudgetBytes)
           if (text !== '') {
-            try {
-              session.append('user/message', {
-                content: [{ type: 'text', text }],
-                source: {
-                  kind: REPLAY_EVENT_TYPE,
-                  scope: replayed.scope,
-                  seq: replayed.seq,
-                  digest: replayed.digest ?? null,
-                  catalogEntries: replayed.catalog?.count ?? 0,
-                },
-              })
-            } catch (failure: unknown) {
-              // A failed publication must not break the turn it was meant to inform.
-              logger.warn(`dsh-reflection: could not publish the replay: ${String(failure)}`)
-            }
+            // Three Session rules shape this call. An append made from inside a publish is
+            // refused ("cannot reenter while another append is being published"), so it is
+            // deferred to a microtask just outside that publish. A message-producing event
+            // must declare how it enters the surface, and must carry an identified message:
+            // a payload without an id fails validation and corrupts the log.
+            void Promise.resolve().then(() => {
+              try {
+                session.append('user/message', {
+                  id: `replay-${String(replayed.seq)}-${replayed.digest ?? 'na'}`,
+                  role: 'user',
+                  content: [{ type: 'text', text }],
+                  source: {
+                    kind: REPLAY_EVENT_TYPE,
+                    scope: replayed.scope,
+                    seq: replayed.seq,
+                    digest: replayed.digest ?? null,
+                    catalogEntries: replayed.catalog?.count ?? 0,
+                  },
+                }, { surfaceOp: 'append' })
+              } catch (failure: unknown) {
+                // A failed publication must not break the turn it was meant to inform.
+                logger.warn(`dsh-reflection: could not publish the replay: ${String(failure)}`)
+              }
+            })
           }
           try {
             session.append(REPLAY_EVENT_TYPE, replayed, { ignorable: true })
