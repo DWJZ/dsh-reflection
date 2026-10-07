@@ -28,7 +28,7 @@ import { readRegistry, resolveProject } from './registry.js'
 import { cleanupStaleTemps, readStore } from './jsonstore.js'
 import { rebuildView } from './views.js'
 import { buildProvenance, createTurnTracker, registerMemoryIndex, registerMemoryPolicy } from './inject.js'
-import { createInstructionReplay, registerInstructionReplay } from './replay.js'
+import { createInstructionReplay } from './replay.js'
 import { registerMemoryTools } from './tools.js'
 import { registerMemoryCommands } from './commands.js'
 import { renderMemoryIndex } from './retention.js'
@@ -160,8 +160,6 @@ const REPLAY_EVENT_TYPE = 'dsh-reflection/replay'
     runtimeFiber = ctx.inject(['systemPrompt', 'tools'], (scope) => {
       registerMemoryPolicy(scope)
       registerMemoryIndex(scope, (agent: MemoryAgent) => renderIndex(deps, agent))
-      // Same budget as the index: a replay is injected text like any other.
-      registerInstructionReplay(scope, replay, deps.config.indexBudgetBytes)
       registerMemoryTools(scope, deps)
     })
   }
@@ -328,6 +326,28 @@ const REPLAY_EVENT_TYPE = 'dsh-reflection/replay'
       const disposeEvents = ctx.on('session/event', (session: MemorySession, event) => {
         const replayed = replay.observe(String(session.id), event)
         if (replayed !== null) {
+          // Published as an ordinary user message, the way the instruction and catalog
+          // publishers deliver theirs: durable in the Session log, so it survives a
+          // restart too. Its `source.kind` keeps it distinguishable from a human turn,
+          // and the audit event below stays as the machine-readable record.
+          const text = replay.body(String(session.id), deps.config.indexBudgetBytes)
+          if (text !== '') {
+            try {
+              session.append('user/message', {
+                content: [{ type: 'text', text }],
+                source: {
+                  kind: REPLAY_EVENT_TYPE,
+                  scope: replayed.scope,
+                  seq: replayed.seq,
+                  digest: replayed.digest ?? null,
+                  catalogEntries: replayed.catalog?.count ?? 0,
+                },
+              })
+            } catch (failure: unknown) {
+              // A failed publication must not break the turn it was meant to inform.
+              logger.warn(`dsh-reflection: could not publish the replay: ${String(failure)}`)
+            }
+          }
           try {
             session.append(REPLAY_EVENT_TYPE, replayed, { ignorable: true })
           } catch (failure: unknown) {

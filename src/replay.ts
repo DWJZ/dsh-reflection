@@ -16,7 +16,6 @@
  * @module dsh-reflection/replay
  */
 
-import type { Context } from '@deepseek-ai/cordis'
 
 /** Context contribution name, unique across the harness. */
 export const REPLAY_NAME = 'memory:replay'
@@ -177,8 +176,8 @@ export interface InstructionReplay {
    * @returns the replay this event queued, or null when it queued nothing.
    */
   observe(sessionId: string, event: unknown): ReplayDecision | null
-  /** Render the pending replay for one agent, or the empty string. */
-  render(agent: MemoryAgent, budgetBytes: number): string
+  /** Render the pending replay for one Session, or the empty string. */
+  body(sessionId: string, budgetBytes: number): string
   /** Drop the pending replay, once the model has answered with it in view. */
   clear(sessionId: string): void
 }
@@ -252,9 +251,8 @@ export function createInstructionReplay(): InstructionReplay {
         },
       }
     },
-    render(agent, budgetBytes) {
-      const session = agent.session as { id?: unknown } | undefined
-      const entry = typeof session?.id === 'string' ? pending.get(session.id) : undefined
+    body(sessionId, budgetBytes) {
+      const entry = pending.get(sessionId)
       if (entry === undefined) return ''
       return trimToBytes(`${REPLAY_HEADING}\n${composeBody(entry.instructions, entry.catalog)}`, budgetBytes)
     },
@@ -262,28 +260,4 @@ export function createInstructionReplay(): InstructionReplay {
       pending.delete(sessionId)
     },
   }
-}
-
-/**
- * Register the replay as a runtime context.
- * @param ctx - the injection scope that owns the runtime.
- * @param replay - the slot to render from.
- * @param budgetBytes - UTF-8 byte budget for one replay.
- * @returns the exact disposer that removes the contribution.
- */
-export function registerInstructionReplay(
-  ctx: Context,
-  replay: InstructionReplay,
-  budgetBytes: number,
-): () => void {
-  return ctx.systemPrompt.context({
-    name: REPLAY_NAME,
-    order: REPLAY_ORDER,
-    text: (assembleContext: { agent?: MemoryAgent }) => {
-      const agent = assembleContext.agent
-      // A bare assemble (tests, diagnostics) has no session to describe.
-      if (agent === undefined) return ''
-      return replay.render(agent, budgetBytes)
-    },
-  })
 }
