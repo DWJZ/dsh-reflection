@@ -104,6 +104,9 @@ function createController(ctx: Context, settings: MemorySettings) {
 /** Session event type carrying which project a Session was attributed to. */
 const PROJECT_EVENT_TYPE = 'dsh-reflection/project'
 
+/** Session event type recording one workspace-instruction replay. */
+const REPLAY_EVENT_TYPE = 'dsh-reflection/replay'
+
   const projectsByCwd = new Map()
   /** Sessions whose attribution was already recorded, so it is written once. */
   const announcedProjects = new Set()
@@ -323,7 +326,15 @@ const PROJECT_EVENT_TYPE = 'dsh-reflection/project'
       // `/memory consolidate`, which a person runs deliberately.
       const learningOnItsOwn = () => collecting() && settings.consolidation.autoCommit === true
       const disposeEvents = ctx.on('session/event', (session: MemorySession, event) => {
-        replay.observe(String(session.id), event)
+        const replayed = replay.observe(String(session.id), event)
+        if (replayed !== null) {
+          try {
+            session.append(REPLAY_EVENT_TYPE, replayed, { ignorable: true })
+          } catch (failure: unknown) {
+            // The replay itself still happened; only its record is missing.
+            logger.warn(`dsh-reflection: could not record the instruction replay: ${String(failure)}`)
+          }
+        }
         // The model has answered with the replay in view, so it is delivered once.
         if (event.type === 'assistant/message') replay.clear(String(session.id))
         if (collecting()) consolidation.observe(session, event)

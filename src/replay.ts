@@ -110,10 +110,25 @@ function publishedScopes(event: ObservedEvent): { scope: string; digest?: string
   return []
 }
 
+/** One replay the slot queued, which the caller may record. */
+export interface ReplayDecision {
+  /** Scope the replayed copy came from, `<directory>\0<file name>`. */
+  scope: string
+  /** Sequence number of the message that carried it. */
+  seq: number
+  /** Content digest the publisher supplied, when it supplied one. */
+  digest?: string | undefined
+  /** UTF-8 bytes the replay will add, heading included. */
+  bytes: number
+}
+
 /** The workspace-instruction replay slot. */
 export interface InstructionReplay {
-  /** Observe one Session event; fills or clears the pending replay. */
-  observe(sessionId: string, event: unknown): void
+  /**
+   * Observe one Session event.
+   * @returns the replay this event queued, or null when it queued nothing.
+   */
+  observe(sessionId: string, event: unknown): ReplayDecision | null
   /** Render the pending replay for one agent, or the empty string. */
   render(agent: MemoryAgent, budgetBytes: number): string
   /** Drop the pending replay, once the model has answered with it in view. */
@@ -126,14 +141,14 @@ export interface InstructionReplay {
  */
 export function createInstructionReplay(): InstructionReplay {
   const copies = new Map<string, Map<string, InstructionCopy>>()
-  const pending = new Map<string, { text: string; digest: string }>()
+  const pending = new Map<string, { text: string; digest: string; scope: string }>()
 
   return {
     observe(sessionId, event) {
       const observed = event as ObservedEvent
       if (observed.type === 'user/message' && observed.data?.source?.kind === 'agent-instructions') {
         const text = messageText(observed)
-        if (text === '') return
+        if (text === '') return null
         const seq = typeof observed.seq === 'number' ? observed.seq : -1
         const byScope = copies.get(sessionId) ?? new Map<string, InstructionCopy>()
         for (const { scope, digest } of publishedScopes(observed)) {
@@ -143,25 +158,31 @@ export function createInstructionReplay(): InstructionReplay {
           byScope.set(scope, { scope, seq, digest, text })
         }
         copies.set(sessionId, byScope)
-        return
+        return null
       }
-      if (observed.type !== 'compaction/summary') return
+      if (observed.type !== 'compaction/summary') return null
       const range = observed.data?.shadowedRange
       const start = range?.start
       const end = range?.end
-      if (typeof start !== 'number' || typeof end !== 'number') return
+      if (typeof start !== 'number' || typeof end !== 'number') return null
       const byScope = copies.get(sessionId)
-      if (byScope === undefined) return
+      if (byScope === undefined) return null
       const lost = [...byScope.values()].filter(copy => copy.seq >= start && copy.seq <= end)
-      if (lost.length === 0) return
+      if (lost.length === 0) return null
       // The retained tail may still hold the newest copy; only a copy the
       // compaction actually consumed is worth repeating.
       const newest = lost.sort((left, right) => right.seq - left.seq)[0]
-      if (newest === undefined) return
+      if (newest === undefined) return null
       const digest = newest.digest ?? String(newest.seq)
       const current = pending.get(sessionId)
-      if (current !== undefined && current.digest === digest) return
-      pending.set(sessionId, { text: newest.text, digest })
+      if (current !== undefined && current.digest === digest) return null
+      pending.set(sessionId, { text: newest.text, digest, scope: newest.scope })
+      return {
+        scope: newest.scope,
+        seq: newest.seq,
+        digest: newest.digest,
+        bytes: Buffer.byteLength(REPLAY_HEADING + '\n\n' + newest.text, 'utf8'),
+      }
     },
     render(agent, budgetBytes) {
       const session = agent.session as { id?: unknown } | undefined
