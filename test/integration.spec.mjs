@@ -408,6 +408,7 @@ const reducing = await runSession({
 })
 const compactSteps = readFileSync(`${reducing.log}.compact`, 'utf8')
 check('the compaction command ran', compactSteps.includes('handled:success'), compactSteps)
+check('the replay is recorded as an audit event', /audit:/u.test(compactSteps), compactSteps)
 const adopted = /^session:(.+)$/mu.exec(compactSteps)?.[1]
 check('the driver reported the Session it compacted',
   typeof adopted === 'string' && adopted !== '', compactSteps)

@@ -355,13 +355,15 @@ const REPLAY_EVENT_TYPE = 'dsh-reflection/replay'
                 // A failed publication must not break the turn it was meant to inform.
                 logger.warn(`dsh-reflection: could not publish the replay: ${String(failure)}`)
               }
+              // The ledger row folds this record, so it is deferred for the same reason:
+              // an append made inside a publish is refused. The replay itself already
+              // happened, so a missing record is reported and nothing else changes.
+              try {
+                session.append(REPLAY_EVENT_TYPE, replayed, { ignorable: true })
+              } catch (failure: unknown) {
+                logger.warn(`dsh-reflection: could not record the instruction replay: ${String(failure)}`)
+              }
             })
-          }
-          try {
-            session.append(REPLAY_EVENT_TYPE, replayed, { ignorable: true })
-          } catch (failure: unknown) {
-            // The replay itself still happened; only its record is missing.
-            logger.warn(`dsh-reflection: could not record the instruction replay: ${String(failure)}`)
           }
         }
         // The model has answered with the replay in view, so it is delivered once.
