@@ -16,8 +16,11 @@
  * them rather than leaving callbacks that quietly do nothing. The `/memory`
  * command stays registered in both states, because it is the only way back.
  *
- * The plugin imports no harness package at runtime, so it installs from a
- * checkout with no dependency step.
+ * The one harness package this plugin imports at runtime is
+ * `@deepseek-ai/dsh-session`, for `appendPluginRecord`: the record envelope — the
+ * `plugin:` name grammar, the `ignorable` marker, the JSON snapshot — is the
+ * harness's to write, and a plugin cannot set that marker through
+ * `Session.append()` itself.
  *
  * @module dsh-reflection
  */
@@ -36,6 +39,7 @@ import type { PluginConfig } from './settings.js'
 import { createCollector } from './consolidation/collector.js'
 import { createConsolidation } from './consolidation/index.js'
 import { isAbsolute, relative } from 'node:path'
+import { appendPluginRecord } from '@deepseek-ai/dsh-session'
 import type { Context } from '@deepseek-ai/cordis'
 import type { MemoryDeps } from './types/deps.js'
 import type { MemorySettings } from './types/config.js'
@@ -97,8 +101,8 @@ function createController(ctx: Context, settings: MemorySettings) {
   // Keyed by working directory, not by session: several agents can share one
   // session — the auxiliary agent that names it runs elsewhere — and the last one
   // created must not decide which project the others write to.
-/** Session event type carrying which project a Session was attributed to. */
-const PROJECT_EVENT_TYPE = 'dsh-reflection/project'
+/** Session record name carrying which project a Session was attributed to. */
+const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
 
   const projectsByCwd = new Map()
   /** Sessions whose attribution was already recorded, so it is written once. */
@@ -235,16 +239,16 @@ const PROJECT_EVENT_TYPE = 'dsh-reflection/project'
   ) => {
     if (settings.sessionEvents !== true) return
     const session = agent?.session
-    if (session === undefined || typeof session.append !== 'function') return
+    if (session === undefined) return
     if (announcedProjects.has(session.id)) return
     announcedProjects.add(session.id)
     try {
-      session.append(PROJECT_EVENT_TYPE, {
+      appendPluginRecord(session, PROJECT_EVENT_TYPE, {
         project_id: project.project_id,
         canonical_root: project.canonical_root,
         workspace_id: workspace?.id ?? null,
         matched_by: project.matched_by,
-      }, { ignorable: true })
+      })
     } catch (failure) {
       logger.warn(`dsh-reflection: could not record the project attribution: ${describeFailure(failure)}`)
     }

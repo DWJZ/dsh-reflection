@@ -944,11 +944,11 @@ collector 保留**所有** seq（包括本插件自己写的 audit）：audit �
 
 ## P2-6. 审计
 
-每次运行写一条 `dsh-reflection/consolidation` Session 事件，**标记 `ignorable: true`**，内容为计数：`from_seq` / `to_seq` / `relevant_events` / `ignored_events` / `operations` / `status`。
+每次运行写一条 `plugin:dsh-reflection/consolidation` 插件记录（`appendPluginRecord`），内容为计数：`from_seq` / `to_seq` / `relevant_events` / `ignored_events` / `operations` / `status`。记录信封由 harness 打上 `ignorable: true`，因此不进模型可见面；迁移前写入的 `dsh-reflection/consolidation` 老事件读回时按前缀同样识别为自有记录。
 
 不得写入：secret、完整轨迹、完整 Memory 内容。审计用于调试与评估，不是第二份 Memory。
 
-审计写入失败**不得**让 mark 回退（提交才是保证，留痕只是留痕），但要 warn。审计事件不可能喂回下一轮：collector 按命名空间排除自己的事件。
+审计写入失败**不得**让 mark 回退（提交才是保证，留痕只是留痕），但要 warn。审计记录不可能喂回下一轮：collector 按命名空间排除自己的记录。Payload 必须可无损 JSON 化 —— 缺失的可选字段要留空不写，而不是写成 `undefined`（写入器会拒绝 `undefined`）。
 
 ## P2-6b. 支持范围：自动学习需要长驻实例
 
@@ -1048,8 +1048,10 @@ DSH STORE 的固定 Commit 检查（Issue #1245）判定的两条确定原因是
 
 - 改：`package.json` 的 `name`、`cordis.patch.yml` 的 Bundle entry `id`/`name`、README/契约文档中的插件名、
   以及本机 desktop profile 的依赖键、bundle 列表与 patch entry id。
-- **不改：Session 事件类型名 `dsh-reflection/consolidation`、`dsh-reflection/project`。** 它们是已写入 Session
-  日志的持久数据键，改名会让历史会话无法被识别；仓库规则禁止移动或覆盖已提交的代际。
+- **改：会话记录名改为 harness 的 `plugin:` 命名空间** —— `plugin:dsh-reflection/consolidation`、
+  `plugin:dsh-reflection/project`。`appendPluginRecord` 只接受这个命名空间，并由 harness 负责打上
+  `ignorable` 标记。历史会话里的旧名 `dsh-reflection/…` 仍被识别：客户端的行折叠与 collector 的分类
+  同时认两个名字，所以老日志照常显示、照常被跳过，不需要改写任何已提交的代际。
 - 不改：仓库目录名与 GitHub 仓库名（它们是路径与远端名称，不是包标识）。
 - 暂未改：诊断消息前缀 `dsh-reflection:`（纯文案；改它需同步 `test/views.spec.mjs` 的三处断言）。
 

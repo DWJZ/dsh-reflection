@@ -17,8 +17,12 @@
  */
 
 import type { EventPayload, ObservedEvent, TrajectoryEntry, WindowOptions } from '../types/trajectory.js'
-/** Namespace reserved for this plugin's own Session events. */
-export const INTERNAL_EVENT_PREFIX = 'dsh-reflection/'
+/**
+ * Namespaces reserved for this plugin's own Session records: the `plugin:` records
+ * written now, and the un-namespaced type earlier builds wrote. Both stay
+ * recognized, so a Session recorded by either build classifies the same way.
+ */
+export const INTERNAL_EVENT_PREFIXES: readonly string[] = Object.freeze(['plugin:dsh-reflection/', 'dsh-reflection/'])
 
 /** Source kind that marks a `user/message` as a human turn rather than injected context. */
 export const HUMAN_SOURCE_KIND = 'user'
@@ -94,6 +98,7 @@ export const SKIPPED_EVENT_TYPES = Object.freeze(new Set([
   'turn/end',
   'turn/start',
   'web/deepseek-search-llm-request',
+  'working-directory/change',
   'workspace/changes',
 ]))
 
@@ -120,7 +125,7 @@ export interface Classification {
 export function classify(event: ObservedEvent): Classification {
   if (event?.ignorable === true) return { kind: 'ignorable', type: String(event.type) }
   const type = String(event?.type ?? '')
-  if (type.startsWith(INTERNAL_EVENT_PREFIX)) return { kind: 'internal', type }
+  if (INTERNAL_EVENT_PREFIXES.some(prefix => type.startsWith(prefix))) return { kind: 'internal', type }
   if (RELEVANT_EVENT_TYPES.has(type)) return { kind: 'relevant', type }
   if (SKIPPED_EVENT_TYPES.has(type)) return { kind: 'skipped', type }
   return { kind: 'unsupported', type }

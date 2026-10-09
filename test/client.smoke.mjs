@@ -143,7 +143,7 @@ const rowOf = (definition, event) => definition.buildViewNode({
   kind: definition.kind,
   id: `${String(definition.kind)}:${String(event.seq)}`,
   start: { event, location: { kind: 'unresolved' } },
-  state: { seq: event.seq, time: event.time, payload: event.data },
+  state: { seq: event.seq, time: event.time, key: String(event.type), payload: event.data },
 })
 const textOf = (definition, event) => rowOf(definition, event)?.data?.node?.text
 const toneOf = (definition, event) => rowOf(definition, event)?.data?.node?.tone
@@ -250,6 +250,22 @@ check('a Session outside any workspace says so instead of printing null',
   textOf(project, projectEvent(6, { ...attribution, workspace_id: null }))
   === '📁 Project attribution · /Users/me/project · by registry path · project proj_01J8Z · no workspace',
   String(textOf(project, projectEvent(6, { ...attribution, workspace_id: null }))))
+
+console.log('rows written before the migration still fold')
+// A Session keeps whichever name it was written under, so both have to render.
+const legacyProjectEvent = (seq, data) => ({ type: 'dsh-reflection/project', seq, time: 1_700_000_000_000, data })
+const legacyConsolidationEvent = (seq, data) => ({ type: 'dsh-reflection/consolidation', seq, time: 1_700_000_000_000, data })
+check('a legacy attribution folds into the same row',
+  textOf(project, legacyProjectEvent(4, attribution))
+  === '📁 Project attribution · /Users/me/project · by registry path · project proj_01J8Z · workspace ws_7',
+  String(textOf(project, legacyProjectEvent(4, attribution))))
+check('and keeps its own name as the row key',
+  rowOf(project, legacyProjectEvent(4, attribution))?.data?.node?.key === 'dsh-reflection/project',
+  String(rowOf(project, legacyProjectEvent(4, attribution))?.data?.node?.key))
+check('a legacy consolidation audit folds into the same row',
+  toneOf(consolidation, legacyConsolidationEvent(49, success)) === 'positive'
+  && String(textOf(consolidation, legacyConsolidationEvent(49, success))).includes('added 2'),
+  String(textOf(consolidation, legacyConsolidationEvent(49, success))))
 
 console.log('the closed vocabularies')
 const toneSet = new Set(['neutral', 'positive', 'accent', 'warning', 'critical'])

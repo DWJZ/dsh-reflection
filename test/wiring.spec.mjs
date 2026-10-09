@@ -20,6 +20,7 @@ const plugin = await import(pathToFileURL(join(PLUGIN, 'src/index.js')).href)
 const { userLayout, projectLayout, pluginConfigPath } = await import(pathToFileURL(join(PLUGIN, 'src/paths.js')).href)
 const { readStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.js')).href)
 const { resolveConfig } = await import(pathToFileURL(join(PLUGIN, 'src/config.js')).href)
+const { Session, SessionId, SESSION_FORMAT_VERSION, pluginRecordOf } = await import('@deepseek-ai/dsh-session')
 
 let failures = 0
 const check = (name, condition, detail = '') => {
@@ -36,6 +37,16 @@ mkdirSync(MEMORY, { recursive: true })
 const PROJECT_DIR = join(ROOT, 'project')
 mkdirSync(join(PROJECT_DIR, '.git'), { recursive: true })
 const CONFIG = { dshHome: ROOT, memoryDir: MEMORY, enabled: true }
+
+/**
+ * Every plugin record one Session holds, in log order.
+ * @param session - the Session to read.
+ * @returns the records `pluginRecordOf` recognizes.
+ */
+const recordsOf = (session) => Array.from({ length: Number(session.seq) })
+  .map((_unused, index) => session.eventAt(index))
+  .map(event => (event === undefined ? undefined : pluginRecordOf(event)))
+  .filter(record => record !== undefined)
 
 /** One agent stub bound to a session and working directory. */
 const agentStub = (sessionId = 'session-1', cwd = PROJECT_DIR) => ({
@@ -177,13 +188,11 @@ console.log('writing rows into the Session log is off unless asked for')
 {
   const quietCtx = start({ ...CONFIG, enabled: true })
   await runCommand(quietCtx, 'enable')
-  const written = []
+  // A real Session, so a record the plugin writes lands in the log it would land
+  // in under the product writer.
+  const quietSession = Session.create(SessionId('session-quiet'))
   const quietAgent = {
-    session: {
-      id: 'session-quiet',
-      header: { id: 'session-quiet', cwd: PROJECT_DIR },
-      append: (type, data, options) => { written.push({ type, data, ignorable: options?.ignorable === true }) },
-    },
+    session: quietSession,
     runMaintenance: task => task(new AbortController().signal),
   }
   quietCtx.emit('agent/created', { agent: quietAgent })
@@ -194,7 +203,7 @@ console.log('writing rows into the Session log is off unless asked for')
     data: { message: { content: [{ type: 'text', text: 'I ran the tests.' }] } },
   })
   await runCommand(quietCtx, 'consolidate', quietAgent)
-  check('nothing reached the Session log', written.length === 0, JSON.stringify(written))
+  check('nothing reached the Session log', recordsOf(quietSession).length === 0, JSON.stringify(recordsOf(quietSession)))
   await disposeEffects(quietCtx)
 }
 
@@ -202,18 +211,24 @@ console.log('the project attribution is recorded once per Session')
 {
   const attrCtx = start({ ...CONFIG, enabled: true, sessionEvents: true })
   await runCommand(attrCtx, 'enable')
-  const written = []
+  // The attribution is resolved from the Session header's working directory, so
+  // the fixture carries one.
+  const attrId = SessionId('session-attributed')
+  const attrSession = Session.create(attrId, undefined, {
+    version: SESSION_FORMAT_VERSION,
+    id: attrId,
+    createdAt: Date.now(),
+    cwd: PROJECT_DIR,
+    isSeeded: false,
+  })
   const attrAgent = {
-    session: {
-      id: 'session-attributed',
-      header: { id: 'session-attributed', cwd: PROJECT_DIR },
-      append: (type, data, options) => { written.push({ type, data, ignorable: options?.ignorable === true }) },
-    },
+    session: attrSession,
     runMaintenance: task => task(new AbortController().signal),
   }
   attrCtx.emit('agent/created', { agent: attrAgent })
   await new Promise(resolve => { setImmediate(resolve) })
-  const attribution = written.filter(entry => entry.type === 'dsh-reflection/project')
+  const written = recordsOf(attrSession)
+  const attribution = written.filter(entry => entry.type === 'plugin:dsh-reflection/project')
   check('the attribution is recorded', attribution.length === 1, JSON.stringify(written.map(entry => entry.type)))
   check('it names the project and the root',
     typeof attribution[0]?.data?.project_id === 'string'
@@ -221,7 +236,7 @@ console.log('the project attribution is recorded once per Session')
   check('it says which lookup decided', attribution[0]?.data?.matched_by === 'registry' || attribution[0]?.data?.matched_by === 'marker',
     String(attribution[0]?.data?.matched_by))
   check('it carries no Memory content', !('content' in (attribution[0]?.data ?? {})))
-  check('and it is ignorable', attribution[0]?.ignorable === true)
+  check('and it is ignorable', attrSession.eventAt(attribution[0]?.seq)?.ignorable === true)
   await disposeEffects(attrCtx)
 }
 
@@ -383,31 +398,20 @@ console.log('an audit does not seed the next window')
 {
   const loopCtx = start({ ...CONFIG, enabled: true })
   await runCommand(loopCtx, 'enable')
-  /** Session events this block appended, as a real Session would report them. */
-  const appends = []
-  let nextSeq = 1
-  const session = {
-    id: 'session-audit-loop',
-    header: { id: 'session-audit-loop', cwd: PROJECT_DIR },
-    // A real `Session.append()` publishes the event, and this plugin's collector
-    // is one of its subscribers, so the audit comes back to the next window.
-    append: (type, data, options) => {
-      const event = { seq: nextSeq, type, data, ignorable: options?.ignorable === true }
-      nextSeq += 1
-      appends.push(event)
-      loopCtx.emit('session/event', session, event)
-    },
-  }
-  const loopAgent = { session, runMaintenance: task => task(new AbortController().signal) }
-  loopCtx.emit('session/event', session, {
+  // The log already holds one of this plugin's records, exactly as it does after
+  // a run: a reader that knows the name retains and skips it.
+  const loopSession = Session.create(SessionId('session-audit-loop'))
+  const loopAgent = { session: loopSession, runMaintenance: task => task(new AbortController().signal) }
+  loopCtx.emit('session/event', loopSession, {
     seq: 0,
-    type: 'dsh-reflection/consolidation',
+    type: 'plugin:dsh-reflection/consolidation',
     data: { from_seq: 0, to_seq: 0, status: 'success' },
     ignorable: true,
   })
   const first = await runCommand(loopCtx, 'consolidate', loopAgent)
   check('the audit-only window is consumed', first.kind === 'success' && String(first.text).includes('no human turn'), String(first.text))
-  check('and it is not replaced by an audit of its own', appends.length === 0, JSON.stringify(appends))
+  check('and it is not replaced by an audit of its own',
+    recordsOf(loopSession).length === 0, JSON.stringify(recordsOf(loopSession)))
   const second = await runCommand(loopCtx, 'consolidate', loopAgent)
   check('so the next command finds nothing new rather than another window',
     String(second.text).includes('Nothing new to consolidate'), String(second.text))

@@ -19,6 +19,7 @@ const state = await import(pathToFileURL(join(PLUGIN, 'src/consolidation/state.j
 const { readStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.js')).href)
 const { consolidationLayout, projectLayout, tombstoneLayout, userLayout } = await import(pathToFileURL(join(PLUGIN, 'src/paths.js')).href)
 const { newProjectId } = await import(pathToFileURL(join(PLUGIN, 'src/schema.js')).href)
+const { Session, SessionId, pluginRecordOf } = await import('@deepseek-ai/dsh-session')
 
 let failures = 0
 const check = (name, condition, detail = '') => {
@@ -45,22 +46,37 @@ const toolResult = (seq, text) => ({ seq, type: 'tool/result', data: { message: 
 const ignorable = (seq) => ({ seq, type: 'dsh-allow/check', data: {}, ignorable: true })
 
 /**
+ * Every plugin record one Session holds, in log order.
+ * @param session - the Session to read.
+ * @returns the records `pluginRecordOf` recognizes.
+ */
+const recordsOf = (session) => Array.from({ length: Number(session.seq) })
+  .map((_unused, index) => session.eventAt(index))
+  .map(event => (event === undefined ? undefined : pluginRecordOf(event)))
+  .filter(record => record !== undefined)
+
+/**
  * One orchestrator over a fresh or shared environment.
  * @param options - environment overrides.
  * @returns the orchestrator and the fixtures it uses.
  */
 function harness(options = {}) {
   const collector = options.collector ?? createCollector()
-  const audit = []
   const warnings = []
-  const session = {
-    id: options.sessionId ?? 'session_a',
-    requestHeader: () => ({ config: { provider: 'test-provider', model: 'test-model' } }),
-    append(type, data, appendOptions) {
-      if (options.auditThrows === true) throw new Error('session is going away')
-      audit.push({ type, data, ignorable: appendOptions?.ignorable === true })
-    },
-  }
+  const sessionId = options.sessionId ?? 'session_a'
+  // A real Session, so every record this plugin writes goes through the harness
+  // writer exactly as it does in the product. `foreignSession` hands the plugin
+  // an object that is not a Session instead, which is how a write that cannot
+  // land is staged.
+  const session = options.foreignSession === true
+    ? { id: sessionId, header: { id: sessionId }, requestHeader: () => undefined }
+    : Session.create(SessionId(sessionId))
+  // The fixture carries no request header, so the route this plugin reads is
+  // stubbed on the instance.
+  Object.defineProperty(session, 'requestHeader', {
+    configurable: true,
+    value: () => ({ config: { provider: 'test-provider', model: 'test-model' } }),
+  })
   const phases = []
   const agent = {
     session,
@@ -125,7 +141,11 @@ function harness(options = {}) {
       return options.modelUsage === undefined ? { text } : { text, usage: options.modelUsage }
     },
   })
-  return { consolidation, collector, agent, session, audit, calls, warnings, statePath: STATE.statePath }
+  return {
+    consolidation, collector, agent, session, calls, warnings, statePath: STATE.statePath,
+    /** The records written so far, read back from the Session after each run. */
+    get audit() { return typeof session.eventAt === 'function' ? recordsOf(session) : [] },
+  }
 }
 
 /** The plan that stores one project fact. */
@@ -171,7 +191,7 @@ console.log('a successful run advances the mark')
   const runAudits = harnessed.audit.filter(entry => entry.data?.status !== 'gap')
   check('the run audit was recorded', runAudits.length === 1 && runAudits[0].type === AUDIT_EVENT_TYPE)
   const runAudit = harnessed.audit.filter(entry => entry.data?.status !== 'gap').at(-1)
-  check('the audit is marked ignorable', runAudit.ignorable === true)
+  check('the audit is marked ignorable', harnessed.session.eventAt(runAudit.seq)?.ignorable === true)
   check('the audit carries counts, not content',
     runAudit.data.operations.add === 1 && !JSON.stringify(runAudit.data).includes('pnpm'))
   check('the audit records the window', runAudit.data.from_seq === 1 && runAudit.data.to_seq === 3)
@@ -410,7 +430,7 @@ console.log('a dry run neither writes nor advances')
 
 console.log('an audit that cannot be written does not undo the commit')
 {
-  const harnessed = harness({ sessionId: 'session_noaudit', modelAnswer: addProjectFact([100]), auditThrows: true })
+  const harnessed = harness({ sessionId: 'session_noaudit', modelAnswer: addProjectFact([100]), foreignSession: true })
   observe(harnessed, [human(100, '这个项目用 pnpm')])
   const outcome = await harnessed.consolidation.consolidate(harnessed.agent)
   check('the run still reports success', outcome.status === 'success')

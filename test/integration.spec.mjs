@@ -14,10 +14,11 @@
  * Usage: `node test/integration.spec.mjs`.
  */
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { zstdDecompressSync } from 'node:zlib'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = resolve(PLUGIN, '../..')
@@ -83,6 +84,10 @@ function writePatch(project, options = {}) {
     '',
     '    - id: dsh-reflection',
     `      name: ${JSON.stringify(join(PLUGIN, 'src/index.js'))}`,
+    ...options.drive !== true ? [] : [
+      '      config:',
+      '        sessionEvents: true',
+    ],
     '',
     ...options.compactDrive !== true ? [] : [
       '    - id: dsh-reflection-compact-on-idle',
@@ -92,6 +97,9 @@ function writePatch(project, options = {}) {
     ...options.drive !== true ? [] : [
       '    - id: dsh-reflection-consolidate-on-idle',
       `      name: ${JSON.stringify(join(PLUGIN, 'test/fixtures/consolidate-on-idle.ts'))}`,
+      '',
+      '    - id: dsh-reflection-record-spy',
+      `      name: ${JSON.stringify(join(PLUGIN, 'test/fixtures/record-spy.ts'))}`,
       '',
     ],
   ].join('\n'))
@@ -119,6 +127,7 @@ async function runSession(options) {
     ...options.query === undefined ? {} : { DSH_MEMORY_MOCK_QUERY: options.query },
     ...options.learned === undefined ? {} : { DSH_MEMORY_MOCK_LEARNED: options.learned },
     ...options.drive !== true ? {} : { DSH_MEMORY_DRIVER_LOG: `${log}.driver` },
+    ...options.drive !== true ? {} : { DSH_MEMORY_RECORD_LOG: `${log}.records` },
     ...options.compactDrive !== true ? {} : { DSH_MEMORY_COMPACT_LOG: `${log}.compact` },
   }
   const outcome = await new Promise((settle) => {
@@ -229,6 +238,22 @@ function projectIdFor(project) {
 }
 
 /**
+ * Every plugin record the run's Session published.
+ *
+ * The spy fixture reads the harness's own `session/event` feed, so a record that
+ * appears here reached the harness's Session. A writer bound to a second copy of
+ * the session module would have refused the Session it was handed and published
+ * nothing, which is what this asserts against. The persisted generation cannot
+ * serve here: the headless profile does not flush it during a one-shot run.
+ * @param logPath - the spy's log file.
+ * @returns the records, in publication order.
+ */
+function publishedRecords(logPath) {
+  if (!existsSync(logPath)) return []
+  return readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line))
+}
+
+/**
  * A small stable number for a string, used only to name files.
  * @param text - the text to hash.
  * @returns a non-negative integer.
@@ -303,6 +328,19 @@ check('its evidence cites a sequence number from the window',
   && learnedRecord.evidence[0].event_seqs[0] >= 0)
 const consolidationState = join(HOME, 'memory', 'consolidation-state.json')
 check('the progress mark was recorded', existsSync(consolidationState))
+// This is the assertion that proves the plugin's writer resolved to the
+// harness's own session module rather than to a second copy of it.
+const auditRecords = publishedRecords(`${learnedRun.log}.records`)
+  .filter(record => record.type === 'plugin:dsh-reflection/consolidation')
+check('the run published a consolidation record from the Session',
+  auditRecords.some(record => record.data?.status === 'success'),
+  JSON.stringify(auditRecords.map(record => record.data?.status)))
+check('the record carries the ignorable marker the writer owns',
+  auditRecords.length > 0 && auditRecords.every(record => record.ignorable === true),
+  JSON.stringify(auditRecords.map(record => record.ignorable)))
+check('the write did not fall back to a warning',
+  !learnedRun.stderr.includes('could not record the consolidation audit'),
+  learnedRun.stderr.slice(0, 400))
 check('the mark advanced over the window it consumed',
   Object.values(JSON.parse(readFileSync(consolidationState, 'utf8')).sessions)
     .some(progress => progress.last_processed_seq >= 0))

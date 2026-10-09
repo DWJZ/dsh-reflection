@@ -47,6 +47,10 @@ check('an internal event is recognized by its namespace',
   normalize.classify(event(1, 'dsh-reflection/consolidation')).kind === 'internal')
 check('an internal event is internal even when marked ignorable',
   normalize.classify(event(1, 'dsh-reflection/consolidation', {}, { ignorable: true })).kind === 'ignorable')
+check('a record under the plugin namespace is internal too',
+  normalize.classify(event(1, 'plugin:dsh-reflection/consolidation')).kind === 'internal')
+check('a marked record under the plugin namespace is ignorable',
+  normalize.classify(event(1, 'plugin:dsh-reflection/project', {}, { ignorable: true })).kind === 'ignorable')
 check('a turn event is relevant', normalize.classify(human(1, 'x')).kind === 'relevant')
 check('a tool result is relevant', normalize.classify(event(1, 'tool/result')).kind === 'relevant')
 check('a known bookkeeping event is skipped, not unsupported',

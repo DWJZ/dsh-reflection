@@ -19,6 +19,7 @@ const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const plugin = await import(pathToFileURL(join(PLUGIN, 'src/index.js')).href)
 const { projectLayout, tombstoneLayout, userLayout } = await import(pathToFileURL(join(PLUGIN, 'src/paths.js')).href)
 const { readStore, withStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.js')).href)
+const { Session, SessionId, SESSION_FORMAT_VERSION, pluginRecordOf } = await import('@deepseek-ai/dsh-session')
 
 let failures = 0
 const check = (name, condition, detail = '') => {
@@ -36,8 +37,32 @@ const PROJECT = join(ROOT, 'project')
 mkdirSync(join(PROJECT, '.git'), { recursive: true })
 mkdirSync(MEMORY, { recursive: true })
 
-/** Session events these runs appended, as the runtime Session would. */
-const appends = []
+/**
+ * Every plugin record one Session holds, in log order.
+ * @param session - the Session to read.
+ * @returns the records `pluginRecordOf` recognizes.
+ */
+const recordsOf = (session) => Array.from({ length: Number(session.seq) })
+  .map((_unused, index) => session.eventAt(index))
+  .map(event => (event === undefined ? undefined : pluginRecordOf(event)))
+  .filter(record => record !== undefined)
+
+/**
+ * One Session carrying a working directory, as the runtime creates it.
+ * @param id - the session id.
+ * @param cwd - the working directory the attribution reads.
+ * @returns the Session.
+ */
+const sessionAt = (id, cwd) => {
+  const sessionId = SessionId(id)
+  return Session.create(sessionId, undefined, {
+    version: SESSION_FORMAT_VERSION,
+    id: sessionId,
+    createdAt: Date.now(),
+    cwd,
+    isSeeded: false,
+  })
+}
 
 /** One record the store holds. */
 const record = (overrides = {}) => ({
@@ -61,11 +86,7 @@ async function start() {
   plugin.apply(ctx, { dshHome: ROOT, memoryDir: MEMORY, sessionEvents: true })
   if (ctx.registrations.injections.length === 0) throw new Error('the runtime did not mount')
   const agent = {
-  session: {
-    id: 'session-1',
-    header: { id: 'session-1', cwd: PROJECT },
-    append: (type, data, options) => { appends.push({ type, data, ignorable: options?.ignorable === true }) },
-  },
+  session: sessionAt('session-1', PROJECT),
   runMaintenance: task => task(new AbortController().signal),
 }
   ctx.emit('agent/created', { agent })
@@ -129,10 +150,10 @@ const consumed = await run(ctx, 'consolidate', agent)
 check('the window is consumed without asking a model', textOf(consumed).includes('no human turn'))
 // The audit labels which path ran: a person's command, not the idle debounce.
 check('the manual command is recorded as its own trigger',
-  appends.some(entry => entry.data?.trigger === 'manual-command'),
-  JSON.stringify(appends.map(entry => entry.data?.trigger)))
+  recordsOf(agent.session).some(entry => entry.data?.trigger === 'manual-command'),
+  JSON.stringify(recordsOf(agent.session).map(entry => entry.data?.trigger)))
 check('the audit is marked ignorable, so it cannot feed the next run',
-  appends.every(entry => entry.ignorable === true))
+  recordsOf(agent.session).every(entry => agent.session.eventAt(entry.seq)?.ignorable === true))
 const dryConsolidate = await run(ctx, 'consolidate --dry-run', agent)
 check('--dry-run is accepted', dryConsolidate.kind === 'success')
 check('a dry run after the window was consumed reports nothing pending',
@@ -343,11 +364,7 @@ mkdirSync(plain, { recursive: true })
 const fresh = createStubContext()
 plugin.apply(fresh, { dshHome: ROOT, memoryDir: MEMORY })
 const plainAgent = {
-  session: {
-    id: 'session-plain',
-    header: { id: 'session-plain', cwd: plain },
-    append: (type, data, options) => { appends.push({ type, data, ignorable: options?.ignorable === true }) },
-  },
+  session: sessionAt('session-plain', plain),
   runMaintenance: task => task(new AbortController().signal),
 }
 await fresh.emitAsync('agent/created', { agent: plainAgent })

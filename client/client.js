@@ -83,9 +83,15 @@ window.__ModuleLoader__.load({
 		//#endregion
 
 		//#region vocabulary
-		/** Host-written event types this half renders. */
-		const CONSOLIDATION_EVENT = "dsh-reflection/consolidation";
-		const PROJECT_EVENT = "dsh-reflection/project";
+		/**
+		 * The record name this half renders now, and the event type Sessions wrote
+		 * before the migration to the harness's `plugin:` namespace. A Session keeps
+		 * whichever name it was written under, so both fold into the same row.
+		 */
+		const CONSOLIDATION_EVENT = "plugin:dsh-reflection/consolidation";
+		const CONSOLIDATION_EVENT_LEGACY = "dsh-reflection/consolidation";
+		const PROJECT_EVENT = "plugin:dsh-reflection/project";
+		const PROJECT_EVENT_LEGACY = "dsh-reflection/project";
 		/** The one status that carries no operation counters. */
 		const GAP_STATUS = "gap";
 		/**
@@ -339,7 +345,7 @@ window.__ModuleLoader__.load({
 
 		//#region trajectory
 		/**
-		 * Build the Trajectory definition for one log-only event type.
+		 * Build the Trajectory definition for one plugin record.
 		 *
 		 * The row type comes from ui-trajectory (`extension`), which is what keeps
 		 * this target free of any plugin's vocabulary: the definition supplies the
@@ -348,7 +354,7 @@ window.__ModuleLoader__.load({
 		 * row carries its own kind.
 		 * @param {object} options - the row's own vocabulary.
 		 * @param options.kind - definition kind, unique across every target.
-		 * @param options.eventType - the Session event type this row folds.
+		 * @param options.eventTypes - every type this row folds, current name first.
 		 * @param options.idPrefix - stable prefix for the row's business identity.
 		 * @param options.toneOf - ledger emphasis for one payload.
 		 * @param options.summarize - builds the one-line summary from one payload.
@@ -360,26 +366,27 @@ window.__ModuleLoader__.load({
 		 * @returns {DshTrajectoryRow}.
 		 */
 		function createTrajectoryRow(options) {
-			const { kind, eventType, idPrefix, toneOf, summarize, translate } = options;
+			const { kind, eventTypes, idPrefix, toneOf, summarize, translate } = options;
 			/**
 			 * @param {DshRowMatch} match - the matched event.
-			 * @returns {{ seq: number, time: number, payload: unknown }} - the row state.
+			 * @returns {{ seq: number, time: number, key: string, payload: unknown }} - the row state.
 			 */
 			const fold = (match) => ({
 				seq: match.event.seq,
 				time: typeof match.event.time === "number" ? match.event.time : 0,
+				key: String(match.event.type),
 				payload: match.event.data
 			});
 			return {
 				kind,
 				target: "trajectory",
-				match: (event) => (event.type === eventType
+				match: (event) => (eventTypes.includes(event.type)
 					? { id: idPrefix + ":" + String(event.seq), role: "start" }
 					: null),
 				start: (_context, match) => fold(match),
-				update: (context, match) => (match.event.type === eventType ? fold(match) : context.state),
+				update: (context, match) => (eventTypes.includes(match.event.type) ? fold(match) : context.state),
 				buildViewNode: (context) => {
-					/** @type {{ seq: number, time: number, payload: unknown } | undefined} */
+					/** @type {{ seq: number, time: number, key: string, payload: unknown } | undefined} */
 					const current = context.state;
 					if (current === undefined) return null;
 					return {
@@ -397,8 +404,8 @@ window.__ModuleLoader__.load({
 								kind: "extension",
 								seq: current.seq,
 								time: current.time,
-								key: eventType,
-								// The row folds only this plugin's own two event types, whose payload the host
+								key: current.key,
+								// The row folds only this plugin's own records, whose payload the host
 								// writes as an object.
 								text: summarize(/** @type {Record<string, unknown>} */ (current.payload), translate),
 								value: current.payload,
@@ -422,7 +429,7 @@ window.__ModuleLoader__.load({
 		function createConsolidationRow(translate) {
 			return createTrajectoryRow({
 				kind: "trajectory-memory-consolidation",
-				eventType: CONSOLIDATION_EVENT,
+				eventTypes: [CONSOLIDATION_EVENT, CONSOLIDATION_EVENT_LEGACY],
 				idPrefix: "memory-consolidation",
 				toneOf: payload => statusTone(payload.status),
 				summarize: consolidationSummary,
@@ -438,7 +445,7 @@ window.__ModuleLoader__.load({
 		function createProjectRow(translate) {
 			return createTrajectoryRow({
 				kind: "trajectory-memory-project",
-				eventType: PROJECT_EVENT,
+				eventTypes: [PROJECT_EVENT, PROJECT_EVENT_LEGACY],
 				idPrefix: "memory-project",
 				// An attribution is a fact, not an outcome: it asks for no emphasis,
 				// and its symbol is what makes it findable in the ledger.

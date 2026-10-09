@@ -36,14 +36,15 @@ import { failureMessage } from '../errors.js'
 import type { ConsolidationRequest } from './model.js'
 import type { ObservedEvent } from '../types/trajectory.js'
 import { createCollector } from './collector.js'
+import { appendPluginRecord } from '@deepseek-ai/dsh-session'
 import type { Context } from '@deepseek-ai/cordis'
 import type { StateLockOptions } from './state.js'
 import type { ProjectEntry } from '../types/identity.js'
 import type { MemoryConsolidationSettings } from '../types/config.js'
 import type { ActionOptions, KillProbe } from '../types/memory.js'
 
-/** Session event type carrying this plugin's consolidation audit. */
-export const AUDIT_EVENT_TYPE = 'dsh-reflection/consolidation'
+/** Session record name carrying this plugin's consolidation audit. */
+export const AUDIT_EVENT_TYPE = 'plugin:dsh-reflection/consolidation'
 
 /**
  * Build the consolidation orchestrator.
@@ -289,15 +290,20 @@ export function createConsolidation(options: ConsolidationOptions) {
    * @returns nothing.
    */
   const recordAudit = (session: MemorySession, audit: RunAudit): void => {
-    // The plugin's single switch for writing rows into the Session log. It is off
-    // by default because appending is not a supported interface for a plugin: this
-    // relies on an unknown type carrying the `ignorable` marker.
+    // The plugin's single switch for writing the audit row into the Session log.
+    // It is off by default; a deployment that wants the trajectory row turns it on.
     if (options.sessionEvents !== true) return
     // The commit is the guarantee; the audit is a trace of it. A failed append
     // must not hold the mark back, because the next run would commit the same
     // operations again.
     try {
-      session.append(AUDIT_EVENT_TYPE, audit, { ignorable: true })
+      // A record is losslessly JSON by contract, and the writer refuses a payload
+      // a JSON round trip cannot preserve — an optional field left `undefined` is
+      // exactly that, whether it sits at the top level or inside a nested usage
+      // summary. The audit holds counts and labels, so its JSON projection IS the
+      // payload; normalizing once here keeps every construction site from having
+      // to spell each absent field correctly.
+      appendPluginRecord(session, AUDIT_EVENT_TYPE, JSON.parse(JSON.stringify(audit)))
     } catch (failure) {
       logger?.warn?.(`dsh-reflection: could not record the consolidation audit: ${failureMessage(failure)}`)
     }

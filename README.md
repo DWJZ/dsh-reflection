@@ -27,7 +27,10 @@ Install the bundle into a profile, then `/memory` is available in that profile:
 dsh plugin --profile <name> add link:<path to this directory>
 ```
 
-Nothing is imported from the harness at runtime, so the plugin needs no dependency step.
+The one harness package this plugin imports at runtime is `@deepseek-ai/dsh-session`, for
+`appendPluginRecord`. It is declared as a peer dependency, so a profile resolves it to the copy the
+running harness loaded: the record envelope is the harness's to write, and a second copy of that
+module would refuse the Session it is handed. Nothing else is imported from the harness.
 
 ### Where Memory lives
 
@@ -140,14 +143,14 @@ Paths move. `/memory project relink <old> <new>` points the same project id at i
 
 ### Trajectory rows
 
-When `sessionEvents` is on, the Web UI's Trajectory ledger shows what the plugin did, one row per event:
+When `sessionEvents` is on, the Web UI's Trajectory ledger shows what the plugin did, one row per record. The names below are what this build writes; a Session written before the migration keeps its older `dsh-reflection/…` name, and the same rows fold those too.
 
-| Event | What its row says | Emphasis |
+| Record | What its row says | Emphasis |
 |---|---|---|
-| `dsh-reflection/consolidation` | the run's status and trigger, the sequence range it covered, and what it wrote — added, updated, superseded and no-op counts, plus rejected, skipped and failed when there were any. A gap names the range no process ever observed and carries no counts | `success` green, `partial` amber, `no-human-turn` grey, `gap` red |
-| `dsh-reflection/project` | the project root, which lookup decided it — a registered path, a workspace, or a root marker — and the project and workspace ids | none: an attribution is a fact, not an outcome |
+| `plugin:dsh-reflection/consolidation` | the run's status and trigger, the sequence range it covered, and what it wrote — added, updated, superseded and no-op counts, plus rejected, skipped and failed when there were any. A gap names the range no process ever observed and carries no counts | `success` green, `partial` amber, `no-human-turn` grey, `gap` red |
+| `plugin:dsh-reflection/project` | the project root, which lookup decided it — a registered path, a workspace, or a root marker — and the project and workspace ids | none: an attribution is a fact, not an outcome |
 
-Both events are log-only: they carry the envelope's `ignorable` marker, so they never reach a model request, and a build that does not know the type skips them instead of refusing the session. Each row is an `extension` record — this plugin's own summary, emphasis and raw payload — so the ledger renders it without knowing any of this plugin's field names, and the shared details payload tab shows the audit as it was written. Nothing here is served over HTTP: the rows read the Session's own log.
+Both records are log-only: `appendPluginRecord` writes them with the envelope's `ignorable` marker, so they never reach a model request, and a build that does not know the name skips them instead of refusing the session. Each row is an `extension` record — this plugin's own summary, emphasis and raw payload — so the ledger renders it without knowing any of this plugin's field names, and the shared details payload tab shows the audit as it was written. Nothing here is served over HTTP: the rows read the Session's own log.
 
 The browser half is declared through `package.json`'s `dsh.client`, so the bundle patch carries one row for the host half and none for the UI.
 

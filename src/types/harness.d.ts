@@ -14,6 +14,11 @@
  * itself is a real devDependency at the version this checkout vendors, so the
  * plugin shape, `Context` identity and event plumbing come from the official
  * package; this file only adds what the harness layers on top.
+ *
+ * The one exception is the record writer: `appendPluginRecord` is imported for
+ * real, because the record envelope is the harness's to write and the import has
+ * to resolve to the harness's own module rather than to a copy. Its call over the
+ * subset below is declared in `types/records.d.ts`.
  */
 
 /** The Session members this plugin reads and writes. */
@@ -29,19 +34,6 @@ interface MemorySession {
   readonly id: string
   /** As `SessionHeader`: the id mirrors the Session's, and the cwd is where it runs. Required, as the harness declares it. */
   readonly header: { readonly id: string; readonly cwd?: string }
-  /**
-   * Append one Session event. The plugin writes types the harness does not know,
-   * which is why the payload is unconstrained and `ignorable` must be set.
-   */
-  append(
-    type: string,
-    data: unknown,
-    options?: {
-      readonly ignorable?: boolean
-      /** How a message-producing event enters the surface; a bare append is refused. */
-      readonly surfaceOp?: string
-    },
-  ): unknown
 }
 
 /** The Agent members this plugin drives. */

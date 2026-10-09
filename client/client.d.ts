@@ -99,8 +99,8 @@ interface DshRowMatch {
 interface TrajectoryRowOptions {
   /** The row kind, as the ledger groups it. */
   kind: string
-  /** The Session event type this row folds. */
-  eventType: string
+  /** Every Session event type this row folds, the current record name first. */
+  eventTypes: readonly string[]
   /** Prefix of the row id. */
   idPrefix: string
   /** Ledger emphasis for one payload. */
@@ -127,9 +127,9 @@ interface DshMemoryClientExports {
   createConsolidationRow(translate: Translate): DshTrajectoryRow
   /** Build the project row definition. */
   createProjectRow(translate: Translate): DshTrajectoryRow
-  /** The Session event type the consolidation row folds. */
+  /** The record name the consolidation row folds. */
   CONSOLIDATION_EVENT: string
-  /** The Session event type the project row folds. */
+  /** The record name the project row folds. */
   PROJECT_EVENT: string
 }
 
@@ -139,7 +139,7 @@ interface DshLedgerNode {
    * The state this row folded so far: what its fold produced, or undefined
    * before the first event matched.
    */
-  state: { seq: number; time: number; payload: unknown } | undefined
+  state: { seq: number; time: number; key: string; payload: unknown } | undefined
   /** The row's key in the ledger. */
   key: string
   /** The row kind. */
