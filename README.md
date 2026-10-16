@@ -27,10 +27,12 @@ Install the bundle into a profile, then `/memory` is available in that profile:
 dsh plugin --profile <name> add link:<path to this directory>
 ```
 
-The one harness package this plugin imports at runtime is `@deepseek-ai/dsh-session`, for
-`appendPluginRecord`. It is declared as a peer dependency, so a profile resolves it to the copy the
-running harness loaded: the record envelope is the harness's to write, and a second copy of that
-module would refuse the Session it is handed. Nothing else is imported from the harness.
+Two harness packages are imported at runtime, both declared as peer dependencies so a profile
+resolves them to the copies the running harness loaded. `@deepseek-ai/dsh-session` writes each
+record through `appendPluginRecord`: the record envelope is the harness's to write, and a second
+copy of that module would refuse the Session it is handed. `@deepseek-ai/dsh-home-paths` resolves
+the harness home, so Memory cannot land somewhere the harness does not consider its own. Nothing
+else is imported from the harness.
 
 ### Where Memory lives
 

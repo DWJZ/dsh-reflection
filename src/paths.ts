@@ -3,16 +3,17 @@
  *
  * Memory belongs to the harness, not to a project, so its location is derived
  * from the harness home instead of being configurable: every run resolves
- * `resolveMemoryDir(resolveDshHome(...))`. A locally installed plugin imports
- * no harness package, so this mirrors `@deepseek-ai/dsh-home-paths` rather than
- * calling it, and follows the same precedence: explicit setting, then
- * `$DSH_HOME`, then `~/.dsh`.
+ * `resolveMemoryDir(resolveDshHome(...))`. The home itself comes from the
+ * harness's own resolver, so the two cannot disagree about the default or about
+ * which variable overrides it — a profile hands this plugin the harness's copy
+ * of that package through the declared peer edge.
  *
  * @module dsh-reflection/paths
  */
 
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { expandHomePath, resolveDshHome as resolveHarnessHome } from '@deepseek-ai/dsh-home-paths'
 import { isProjectId } from './schema.js'
 import type { ScopeLayout } from './types/memory.js'
 
@@ -22,23 +23,20 @@ import type { ScopeLayout } from './types/memory.js'
  * @returns the path with `~` and `~/` expanded; other paths are unchanged.
  */
 export function expandHome(value: string): string {
-  if (value === '~') return homedir()
-  if (value.startsWith('~/') || value.startsWith('~\\')) return join(homedir(), value.slice(2))
-  return value
+  return expandHomePath(value)
 }
 
 /**
  * Resolve the harness home for one plugin instance.
+ *
+ * A blank setting is not a location: it falls through to `$DSH_HOME` and then to
+ * the default, which is what the harness's resolver does with a blank variable.
  * @param configured - the `dshHome` setting, when the deployment set one.
  * @param env - environment to read `DSH_HOME` from.
  * @returns an absolute harness home.
  */
 export function resolveDshHome(configured: unknown, env: NodeJS.ProcessEnv = process.env): string {
-  const explicit = nonEmpty(configured)
-  if (explicit !== undefined) return resolve(expandHome(explicit))
-  const fromEnv = nonEmpty(env.DSH_HOME)
-  if (fromEnv !== undefined) return resolve(expandHome(fromEnv))
-  return join(homedir(), '.dsh')
+  return resolveHarnessHome(nonEmpty(configured), env)
 }
 
 /**

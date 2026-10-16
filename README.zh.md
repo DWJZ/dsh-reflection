@@ -27,7 +27,7 @@ Memory 也会自己留痕。打开 `sessionEvents` 后，每次 consolidation �
 dsh plugin --profile <name> add link:<path to this directory>
 ```
 
-运行时会 import 一个 harness 包：`@deepseek-ai/dsh-session` 的 `appendPluginRecord`。它声明为 peer dependency，profile 会把它解析到运行中 harness 加载的那一份：记录信封由 harness 写，而第二份模块副本会拒绝交给它的 Session。除此之外不 import 任何 harness 包。
+运行时会 import 两个 harness 包，都声明为 peer dependency，profile 会把它解析到运行中 harness 加载的那一份：`@deepseek-ai/dsh-session` 用 `appendPluginRecord` 写记录（记录信封由 harness 写，而第二份模块副本会拒绝交给它的 Session）；`@deepseek-ai/dsh-home-paths` 解析 harness home，保证 Memory 不会落到 harness 不认为是自己家的位置。除此之外不 import 任何 harness 包。
 
 ### Memory 存在哪里
 

@@ -66,6 +66,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-home-paths": "^0.2.1-alpha.5",
     "@deepseek-ai/dsh-session": "^0.2.1-alpha.2"
   },
   "peerDependenciesMeta": {
@@ -75,6 +76,7 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.5-alpha.1",
+    "@deepseek-ai/dsh-home-paths": "^0.2.1-alpha.5",
     "@deepseek-ai/dsh-session": "^0.2.1-alpha.2",
     "@types/node": "^26.6.3",
     "tsdown": "^0.23.0",
