@@ -65,6 +65,8 @@ export const SKIPPED_EVENT_TYPES = Object.freeze(new Set([
   'hook/invoked',
   'hook/result',
   'image/offload',
+  'job/registered',
+  'job/settled',
   'llm/retry',
   'llm/retry-started',
   'model/selection',
