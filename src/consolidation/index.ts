@@ -35,6 +35,7 @@ import { advanceHwm, lastProcessedSeq, NO_PROGRESS, progressFor, readState, reco
 import { failureMessage } from '../errors.js'
 import type { ConsolidationRequest } from './model.js'
 import type { ObservedEvent } from '../types/trajectory.js'
+import type { HistoryReader } from '../history.js'
 import { createCollector } from './collector.js'
 import { appendPluginRecord } from '@deepseek-ai/dsh-session'
 import type { Context } from '@deepseek-ai/cordis'
@@ -162,6 +163,8 @@ export interface ConsolidationOptions {
   host: string
   kill?: KillProbe | undefined
   sessionEvents: boolean
+  /** Reads ranges this process never observed; absent when the harness cannot. */
+  history?: HistoryReader | undefined
   projectFor(agent: MemoryAgent): ProjectEntry | null
   callModel?(request: ConsolidationRequest): Promise<ConsolidationAnswer>
   schedule?(run: () => void, ms: number): ReturnType<typeof setTimeout>
@@ -258,6 +261,13 @@ export function createConsolidation(options: ConsolidationOptions) {
     // mark, which is a different thing from a Session it has never seen.
     if (first === undefined) return { afterSeq: mark === NO_PROGRESS ? undefined : mark }
     if (first <= mark + 1) return { afterSeq: mark }
+    // The harness may still be able to read a range this process never saw, so
+    // ask before writing the hole down as a gap.
+    const backfilled = await options.history?.read(sessionId, mark + 1, first - 1)
+    if (backfilled !== undefined && backfilled.length > 0) {
+      logger?.info?.(`dsh-reflection: backfilled seqs ${String(mark + 1)}..${String(first - 1)} of ${sessionId} from session history`)
+      return { afterSeq: mark, backfilled }
+    }
     // Everything between the mark and the first event this process can still
     // offer was unavailable, whatever the reason: a mount that came late, a
     // Session resumed elsewhere, or events the buffer had to evict under its
@@ -357,7 +367,7 @@ export function createConsolidation(options: ConsolidationOptions) {
     const sessionId = session?.id
     if (typeof sessionId !== 'string') return { status: 'no-session' }
 
-    const { afterSeq, gap } = await reconcile(sessionId)
+    const { afterSeq, gap, backfilled } = await reconcile(sessionId)
     if (afterSeq === undefined) return { status: 'nothing-observed' }
     if (gap !== undefined) {
       // Recorded as soon as it is durable, not with this run's outcome: a window
@@ -366,7 +376,8 @@ export function createConsolidation(options: ConsolidationOptions) {
       // because the mark has already moved past.
       recordAudit(session, { status: 'gap', ...gap, trigger: runOptions.trigger ?? 'direct' })
     }
-    const window = batchWindow(collector.eventsFor(sessionId), {
+    const observed = mergeEvents(backfilled ?? [], collector.eventsFor(sessionId))
+    const window = batchWindow(observed, {
       afterSeq,
       maxEvents: config.maxRelevantEventsPerBatch,
       maxBytes: config.maxTrajectoryBytesPerBatch,
@@ -441,7 +452,7 @@ export function createConsolidation(options: ConsolidationOptions) {
       fromSeq: afterSeq + 1,
       toSeq: toSeq,
       visibleSeqs: new Set(window.entries.map(entry => entry.seq)),
-      eventsBySeq: new Map(collector.eventsFor(sessionId).map((event: ObservedEvent) => [event.seq, event])),
+      eventsBySeq: new Map(observed.map((event: ObservedEvent) => [event.seq, event])),
       existing,
       projectId,
       sessionId,
@@ -606,6 +617,23 @@ export function createConsolidation(options: ConsolidationOptions) {
       trigger.dispose()
     },
   }
+}
+
+/**
+ * Merge the events a batch may read into one ascending sequence.
+ *
+ * The collector's copy wins over a backfilled one: it is the event this process
+ * observed live, and the two can only differ if the log was rewritten under a
+ * running process, which the harness does not do.
+ * @param backfilled - events read from Session history.
+ * @param observed - events this process saw.
+ * @returns every distinct seq once, ascending.
+ */
+function mergeEvents(backfilled: readonly ObservedEvent[], observed: readonly ObservedEvent[]): ObservedEvent[] {
+  const bySeq = new Map<number, ObservedEvent>()
+  for (const event of backfilled) bySeq.set(event.seq, event)
+  for (const event of observed) bySeq.set(event.seq, event)
+  return [...bySeq.values()].sort((left, right) => left.seq - right.seq)
 }
 
 /**

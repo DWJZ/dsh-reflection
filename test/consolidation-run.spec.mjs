@@ -128,6 +128,7 @@ function harness(options = {}) {
     host: 'test-host',
     kill: () => { throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' }) },
     projectFor: () => (options.projectless === true ? null : { project_id: PROJECT }),
+    ...options.history === undefined ? {} : { history: options.history },
     ...options.schedule === undefined ? {} : { schedule: options.schedule },
     ...options.cancelSchedule === undefined ? {} : { cancelSchedule: options.cancelSchedule },
     callModel: async request => {
@@ -313,6 +314,59 @@ console.log('an unobserved range is recorded as a gap')
   check('the gap ends before the first observed event', progress.gaps[0].to_seq === 499)
   check('the mark is now the observed end', progress.last_processed_seq === 500)
   check('the gap is announced', harnessed.warnings.length >= 0 && progress.gaps[0].at.length > 0)
+}
+
+console.log('an unobserved range is backfilled from Session history')
+{
+  const at = '2026-09-29T00:00:00.000Z'
+  const historyEvents = [
+    human(1, '这个项目用 pnpm'),
+    assistant(2, '好的'),
+    { seq: 3, type: 'turn/end', data: {} },
+  ]
+  const reads = []
+  const harnessed = harness({
+    sessionId: 'session_backfill',
+    history: {
+      async read(sessionId, fromSeq, toSeq) {
+        reads.push({ sessionId, fromSeq, toSeq })
+        return historyEvents.filter(event => event.seq >= fromSeq && event.seq <= toSeq)
+      },
+    },
+  })
+  await state.withState({ statePath: STATE.statePath, lockPath: STATE.lockPath, lockTimeoutMs: 3000, staleLockMs: 60000 }, current => ({
+    changed: true,
+    state: state.advanceHwm(current, 'session_backfill', 0, at),
+  }))
+  observe(harnessed, [assistant(4, 'resumed elsewhere')])
+  const outcome = await harnessed.consolidation.consolidate(harnessed.agent)
+  check('the hole was read from history', reads.length === 1
+    && reads[0].fromSeq === 1 && reads[0].toSeq === 3, JSON.stringify(reads))
+  check('the backfilled window reaches the model', outcome.status === 'success', JSON.stringify(outcome))
+  check('the model saw the backfilled turn',
+    JSON.stringify(harnessed.calls[0]?.entries ?? []).includes('这个项目用 pnpm'))
+  const progress = state.readState(STATE.statePath).sessions.session_backfill
+  check('no gap is recorded for a readable range', progress.gaps.length === 0, JSON.stringify(progress.gaps))
+  check('the mark covers the whole window', progress.last_processed_seq === 4)
+  check('the window starts at the stored mark', outcome.from_seq === 1, JSON.stringify(outcome))
+}
+
+console.log('a range the harness cannot read is still a gap')
+{
+  const at = '2026-09-29T00:00:00.000Z'
+  const harnessed = harness({
+    sessionId: 'session_backfill_missing',
+    history: { async read() { return undefined } },
+  })
+  await state.withState({ statePath: STATE.statePath, lockPath: STATE.lockPath, lockTimeoutMs: 3000, staleLockMs: 60000 }, current => ({
+    changed: true,
+    state: state.advanceHwm(current, 'session_backfill_missing', 0, at),
+  }))
+  observe(harnessed, [assistant(4, 'resumed elsewhere')])
+  await harnessed.consolidation.consolidate(harnessed.agent)
+  const progress = state.readState(STATE.statePath).sessions.session_backfill_missing
+  check('the unreadable range is recorded', progress.gaps.length === 1, JSON.stringify(progress.gaps))
+  check('the gap covers the hole', progress.gaps[0].from_seq === 1 && progress.gaps[0].to_seq === 3)
 }
 
 console.log('a gap is audited even when the run afterwards fails')

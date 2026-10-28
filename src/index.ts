@@ -39,6 +39,7 @@ import { createSummaryService } from './summary-service.js'
 import { resolveEnabled, writeEnabled } from './settings.js'
 import type { PluginConfig } from './settings.js'
 import { createCollector } from './consolidation/collector.js'
+import { createHistoryReader } from './history.js'
 import { createConsolidation } from './consolidation/index.js'
 import { isAbsolute, relative } from 'node:path'
 import { appendPluginRecord } from '@deepseek-ai/dsh-session'
@@ -109,6 +110,8 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
   const projectsByCwd = new Map()
   /** Sessions whose attribution was already recorded, so it is written once. */
   const announcedProjects = new Set()
+  /** Reads the ranges this process never observed, through the harness service. */
+  const history = createHistoryReader(ctx)
   /** Keeps each scope's cached summary in step with its store, off the request path. */
   const summaryService = createSummaryService({
     scopes,
@@ -287,6 +290,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
       })
       consolidation = createConsolidation({
         sessionEvents: settings.sessionEvents,
+        history,
         host: settings.host,
         llmScope: () => llmScope ?? undefined,
         collector: createCollector(),

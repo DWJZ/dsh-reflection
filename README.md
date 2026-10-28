@@ -32,7 +32,8 @@ resolves them to the copies the running harness loaded. `@deepseek-ai/dsh-sessio
 record through `appendPluginRecord`: the record envelope is the harness's to write, and a second
 copy of that module would refuse the Session it is handed. `@deepseek-ai/dsh-home-paths` resolves
 the harness home, so Memory cannot land somewhere the harness does not consider its own. Nothing
-else is imported from the harness.
+else is imported: history this process did not observe is read through the optional `sessionQuery`
+service, taken with `ctx.get` rather than imported.
 
 ### Where Memory lives
 
@@ -177,7 +178,7 @@ These properties shape the code:
 - **The summary is cached, not recomputed.** Injection runs before every model step, so it reads `summary.md`; the model call that writes it happens on a write or behind the next read, never on the request path. A cached summary that describes an older revision is still served — a slightly stale summary beats a missing one — while a background refresh catches up.
 - **The generated view is disposable.** A committed mutation succeeds even if `MEMORY.md` cannot be written; the result reports `viewStale` and a warning. The rebuild takes the lock again and re-reads the newest state, so a slow writer cannot overwrite a newer view with an older one.
 - **Provenance is built, not accepted.** The model supplies a fact; the plugin attaches the Session, the turn's human message, and its sequence number. When a turn cannot be identified, the reference stays empty rather than guessed.
-- **Automatic learning keeps its own progress.** The harness no longer offers a supported way to read history out of a Session, so the collector remembers what it saw rather than looking back. The progress mark is therefore "consumed through this sequence number", not a cursor into storage, and a range the process was not present for is written down as a *gap*. That distinction is what stops "never observed" from being silently reported as "read and held nothing".
+- **Automatic learning keeps its own progress, and reads what it missed.** The collector records what this process observed, so the progress mark means "consumed through this sequence number", not a cursor into storage. When a range is missing — a late mount, a Session resumed elsewhere, an evicted buffer — the plugin asks the harness's `sessionQuery` service for it and folds the events into the batch. Only a range that cannot be read whole is written down as a *gap*; that distinction is what stops "never observed" from being silently reported as "read and held nothing".
 
 ## Model Experience
 
@@ -187,7 +188,7 @@ These properties shape the code:
 
 ## Known Limitations and Deferred Work
 
-- **Automatic learning reads only what it was present for.** A Session resumed elsewhere, one already running when the plugin mounts, or events the buffer had to evict under its cap all leave a range this process never saw. They cannot be read back, so the range is recorded as a gap and skipped; those turns are not learned from.
+- **A range the harness cannot read is still a gap.** A Session resumed elsewhere, one already running when the plugin mounts, or events the buffer had to evict under its cap leave a range this process never saw. The plugin reads it back through `sessionQuery`; when that service is absent, the range was pruned, or the read fails, the range is recorded as a gap and skipped, and those turns are not learned from.
 - **Automatic learning needs a long-lived instance.** Its debounce waits outside the agent's maintenance phase, by design, so a one-shot `headless` run exits and disposes before the timer can expire. That is the accepted scope rather than a defect: run `/memory consolidate` in a one-shot run, or use the desktop app, where the timer does fire.
 - **Disabling Memory stops automatic learning too, and waits for it.** Once `/memory disable` returns, nothing new is collected, asked, written, or marked, and a run already under way has settled. Events produced while it was off are not collected later.
 - **The progress file grows with the number of Sessions.** One small record per Session that has produced events is kept forever, because the only sound way to drop one is an age policy this version does not have. At a few hundred bytes per Session that is a megabyte after a few thousand Sessions.
