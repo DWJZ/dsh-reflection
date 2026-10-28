@@ -200,13 +200,13 @@ function mainRequests(log) {
  * @returns the serialized requests.
  */
 /**
- * The injected Memory index inside one request, or an empty string.
+ * The injected Memory summary inside one request, or an empty string.
  * @param text - the concatenated request text.
- * @returns the index body.
+ * @returns the summary body.
  */
-function indexTextOf(text) {
-  const start = text.indexOf('<memory-index>')
-  const end = text.indexOf('</memory-index>')
+function summaryTextOf(text) {
+  const start = text.indexOf('<memory-summary>')
+  const end = text.indexOf('</memory-summary>')
   return start < 0 || end < start ? '' : text.slice(start, end)
 }
 
@@ -290,9 +290,12 @@ console.log('27.1 a later Session in the same project sees the Memory')
 const secondSession = await runSession({ project: PROJECT_A, task: '安装 dependency foo' })
 check('the second Session runs', secondSession.code === 0, secondSession.stderr.slice(0, 400))
 const projectARequest = requestText(secondSession.log)
-check('the model request carries the Memory index', projectARequest.includes('<memory-index>'))
-check('the model request names the remembered fact', projectARequest.includes('[state] 该项目使用 pnpm'))
-check('the index is not an empty envelope', projectARequest.includes('project:'))
+check('the model request carries the Memory summary', projectARequest.includes('<memory-summary>'))
+check('the summary does not inline the remembered fact', !summaryTextOf(projectARequest).includes('该项目使用 pnpm'))
+const projectAIdForSummary = projectIdFor(PROJECT_A)
+check('the summary points at the project index file', projectAIdForSummary !== undefined
+  && projectARequest.includes(`projects/${projectAIdForSummary}/MEMORY.md`))
+check('the summary carries the model-written text', projectARequest.includes('已记录用户的编码偏好'))
 
 console.log('27.5 a driven consolidation learns from a finished turn')
 const CONSOLIDATION_PROJECT = join(ROOT, 'consolidation-project')
@@ -348,9 +351,19 @@ check('the mark advanced over the window it consumed',
 console.log('27.6 a later Session sees the learned Memory')
 const afterLearning = await runSession({ project: CONSOLIDATION_PROJECT, task: '装个依赖' })
 check('the later Session runs', afterLearning.code === 0, afterLearning.stderr.slice(0, 400))
-check('the index carries the learned fact',
-  requestText(afterLearning.log).includes('该项目使用 pnpm 管理依赖'),
-  requestText(afterLearning.log).slice(0, 400))
+const learnedSummaryProject = projectIdFor(CONSOLIDATION_PROJECT)
+const learnedLayout = learnedSummaryProject === undefined
+  ? undefined
+  : projectLayout(join(HOME, 'memory'), learnedSummaryProject)
+const learnedRequest = requestText(afterLearning.log)
+check('the later Session carries a Memory summary', learnedRequest.includes('<memory-summary>'))
+check('the summary points at the project index file', learnedSummaryProject !== undefined
+  && learnedRequest.includes(`projects/${learnedSummaryProject}/MEMORY.md`))
+check('the learned fact reached the file the summary points at',
+  learnedLayout !== undefined && readFileSync(learnedLayout.viewPath, 'utf8').includes('该项目使用 pnpm 管理依赖'))
+check('the learned fact has its own record file',
+  learnedLayout !== undefined && existsSync(learnedLayout.recordsDir)
+  && readdirSync(learnedLayout.recordsDir).some(name => name.endsWith('.md')))
 check('a Session that learned nothing new calls no consolidation model',
   allRequests(afterLearning.log).filter(isConsolidationCall).length === 0)
 check('the driver did not run in the second Session',
@@ -374,13 +387,17 @@ check('the second project records its own fact', projectBWrite.code === 0, proje
 const projectBSession = await runSession({ project: PROJECT_B, task: '装个依赖' })
 check('the second project Session runs', projectBSession.code === 0, projectBSession.stderr.slice(0, 400))
 const projectBRequest = requestText(projectBSession.log)
-check('the second project sees its own fact', projectBRequest.includes('[state] 该项目使用 npm'))
-// The assertion is about the injected index, not about the whole request: a
+const projectBId = projectIdFor(PROJECT_B)
+check('the second project sees its own scope', projectBId !== undefined
+  && projectBRequest.includes(`projects/${projectBId}/MEMORY.md`))
+// The assertion is about the injected summary, not about the whole request: a
 // request also carries tool-call arguments, and those legitimately quote what the
 // user said in that project.
-check('the second project does not see the first project\'s fact',
-  !indexTextOf(projectBRequest).includes('该项目使用 pnpm'))
-check('user Memory is visible from the second project', projectBRequest.includes('用户偏好中文解释'))
+const projectAScope = `projects/${String(projectIdFor(PROJECT_A))}/MEMORY.md`
+check('the second project does not see the first project\'s scope',
+  !summaryTextOf(projectBRequest).includes(projectAScope))
+check('user Memory is visible from the second project',
+  summaryTextOf(projectBRequest).includes('/user/MEMORY.md'))
 
 console.log('27.4 an explicit supersede retires the record it replaces')
 const targetWrite = await runSession({
@@ -413,8 +430,8 @@ check('exactly one active record remains',
 const projectCSession = await runSession({ project: PROJECT_C, task: '装个依赖' })
 check('the later Session runs', projectCSession.code === 0, projectCSession.stderr.slice(0, 400))
 const projectCRequest = requestText(projectCSession.log)
-check('the index shows the replacement', projectCRequest.includes('该项目已迁移到 pnpm'))
-check('the index hides the retired fact', !projectCRequest.includes('该项目使用 npm'))
+check('the request carries a summary envelope', projectCRequest.includes('<memory-summary>'))
+check('the summary never inlines the retired fact', !projectCRequest.includes('该项目使用 npm'))
 
 console.log('Memory survives a compaction')
 // `/compact` reduces the stored history through the harness's own entry point. A later
@@ -446,10 +463,10 @@ const afterCompaction = await runSession({
 check('the adopting run succeeds', afterCompaction.code === 0, afterCompaction.stderr.slice(0, 300))
 const reducedRequest = JSON.stringify(mainRequests(afterCompaction.log).at(-1) ?? '')
 check('the bulky turn is gone from the reduced history', !reducedRequest.includes('BULK-MARKER-'))
-check('the index envelope is still assembled after the compaction',
-  reducedRequest.includes('<memory-index>'))
-check('the index still carries the remembered fact after the compaction',
-  reducedRequest.includes(FACT), reducedRequest.slice(-300))
+check('the summary envelope is still assembled after the compaction',
+  reducedRequest.includes('<memory-summary>'))
+check('the summary still reaches the reduced request',
+  reducedRequest.includes('已记录用户的编码偏好'), reducedRequest.slice(-300))
 
 rmSync(ROOT, { recursive: true, force: true })
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)

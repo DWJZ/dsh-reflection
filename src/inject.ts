@@ -1,10 +1,11 @@
 /**
  * Context injection, and what the plugin knows about the current turn.
  *
- * Phase 1 injects one bounded index of active Memory and nothing else: there is
- * no per-turn retrieval, so the model asks for detail through `memory_search`
- * when it wants it. The index travels as runtime context, which the agent loop
- * logs as model history, so a replayed session reconstructs the same text.
+ * A request carries a bounded summary of Memory and the paths of the files that
+ * hold the facts; the facts themselves are read on demand, either straight from
+ * those files or through `memory_search` / `memory_get`. The summary travels as
+ * runtime context, which the agent loop logs as model history, so a replayed
+ * session reconstructs the same text.
  *
  * Reading the session log synchronously is deprecated, so the plugin learns the
  * current turn's input by observing `session/event`: the last human `user/message`
@@ -19,7 +20,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Provenance } from './types/memory.js'
 
 /** Context contribution name, unique across the harness. */
-export const MEMORY_INDEX_NAME = 'memory:index'
+export const MEMORY_SUMMARY_NAME = 'memory:summary'
 
 /**
  * Position among runtime contexts.
@@ -28,7 +29,7 @@ export const MEMORY_INDEX_NAME = 'memory:index'
  * order. It sorts after the sandbox and approval policies, which describe the
  * turn's constraints, and before any tool guidance.
  */
-export const MEMORY_INDEX_ORDER = 130
+export const MEMORY_SUMMARY_ORDER = 130
 
 /** Stable name of the Memory policy section. */
 export const MEMORY_POLICY_NAME = 'memory:policy'
@@ -37,7 +38,7 @@ export const MEMORY_POLICY_NAME = 'memory:policy'
  * Where the policy sits among the prompt sections.
  *
  * The harness allocates named positions for its own sections; a local plugin has
- * no name there, so this is a literal like the index context order. It lands
+ * no name there, so this is a literal like the summary context order. It lands
  * just before the tool sections, so the model reads the rule before the tool
  * catalogue that acts on it.
  */
@@ -54,16 +55,13 @@ export const MEMORY_POLICY_ORDER = 950
  * habits. The rule belongs in front of the turn, not attached to the call.
  */
 export const MEMORY_POLICY_TEXT = [
-  'Memory has two separate paths, and they are not interchangeable.',
+  'Memory is not in your context: each request carries a short summary and the paths of the files that hold the facts.',
   '',
-  'Call `memory_remember` only when the user explicitly asks for something to be remembered,',
-  'saved, or kept for later sessions — "记住", "记一下", "remember this", "save this to memory".',
+  'Read Memory on your own initiative. Before starting work that may have been done before — the same repository, the same task, a decision you would otherwise re-derive — or when the user refers to earlier work you cannot see, read the files named in the summary, or call `memory_search` and then `memory_get` for one record.',
+  'Do this without being asked; do not answer from memory you have not checked.',
   '',
-  'Do not call it because information looks important, durable, useful, or likely to matter later.',
-  'When the user merely states a preference, a project fact, or a decision without asking for it to be kept,',
-  'leave it to the consolidation subsystem, which reads the finished turn and decides whether it becomes Memory.',
-  'Persisting it yourself instead removes that judgement from the subsystem, and makes what Memory holds depend',
-  'on your own reading of the turn.',
+  'Writing is separate. Call `memory_remember` only when the user explicitly asks for something to be remembered, saved, or kept for later sessions — "记住", "记一下", "remember this", "save this to memory".',
+  'Do not call it because information looks important, durable, useful, or likely to matter later: consolidation reads the finished turn and decides what becomes Memory.',
 ].join('\n')
 
 /**
@@ -80,15 +78,15 @@ export function registerMemoryPolicy(ctx: Context) {
 }
 
 /**
- * Register the always-visible Memory index.
+ * Register the always-visible Memory summary.
  * @param ctx - Cordis context of this plugin's fiber.
- * @param render - builds the index text for one agent; must be synchronous.
+ * @param render - builds the summary text for one agent; must be synchronous.
  * @returns the exact disposer that removes the contribution.
  */
-export function registerMemoryIndex(ctx: Context, render: (agent: MemoryAgent) => string): () => void {
+export function registerMemorySummary(ctx: Context, render: (agent: MemoryAgent) => string): () => void {
   return ctx.systemPrompt.context({
-    name: MEMORY_INDEX_NAME,
-    order: MEMORY_INDEX_ORDER,
+    name: MEMORY_SUMMARY_NAME,
+    order: MEMORY_SUMMARY_ORDER,
     text: (assembleContext) => {
       const agent = assembleContext.agent
       // A bare assemble (tests, diagnostics) has no session to describe.

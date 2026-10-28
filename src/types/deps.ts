@@ -43,6 +43,8 @@ export interface MemoryDeps {
   setEnabled(next: boolean): Promise<void>
   /** Whether automatic learning is on (both switches considered). */
   consolidationEnabled(): boolean
+  /** Bring the summary cache up to date after a write, or when a read notices it is behind. */
+  refreshSummary?(agent: MemoryAgent): Promise<void>
   /** Injectable clock in epoch milliseconds. */
   now?(): number
   /** The citation for the turn in flight, when the Session has one to cite. */

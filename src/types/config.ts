@@ -47,10 +47,10 @@ export interface MemorySettings {
   dshHome: string
   /** The Memory root itself. */
   memoryDir: string
-  /** Largest injected index, in UTF-8 bytes. */
-  indexBudgetBytes: number
-  /** How the index budget is split between the user and the project. */
-  indexBudgetSplit: { user: number; project: number }
+  /** Largest injected Memory summary, in UTF-8 bytes. */
+  summaryBudgetBytes: number
+  /** Cap on the summary the model may return. */
+  summaryMaxOutputTokens: number
   /** How many records a search returns. */
   retrievalTopK: number
   /** Markers that identify a project root, kept in step with the harness. */

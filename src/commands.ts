@@ -165,6 +165,7 @@ async function archiveCommand(deps: MemoryDeps, invocation: CommandInvocation, r
     id,
     projectId: deps.projectFor(invocation.agent)?.project_id,
   })
+  await deps.refreshSummary?.(invocation.agent)
   return ok(describeOutcome('archived', outcome))
 }
 
@@ -182,6 +183,7 @@ async function forgetCommand(deps: MemoryDeps, invocation: CommandInvocation, re
     id,
     projectId: deps.projectFor(invocation.agent)?.project_id,
   })
+  await deps.refreshSummary?.(invocation.agent)
   const gone = `The record and its content are gone from ${deps.config.memoryDir}.`
   return ok(outcome.action !== 'forgotten'
     ? describeOutcome('forgotten', outcome)
@@ -240,6 +242,7 @@ async function clearCommand(deps: MemoryDeps, invocation: CommandInvocation, fla
     return ok(`This would delete ${String(count)} ${scope}-scope Memory record(s). Re-run with --yes to proceed.`)
   }
   const outcome = await clearScope(actionOptions(deps, invocation), { scope, projectId: project?.project_id })
+  await deps.refreshSummary?.(invocation.agent)
   if (outcome.action !== 'cleared') return ok(`Nothing to delete in the ${scope} scope.`)
   return ok(`Deleted ${String(outcome.count)} ${scope}-scope Memory record(s). The content is gone from ${deps.config.memoryDir}.${outcome.tombstoneWritten === true
     ? ' A summary tombstone without content remains.'

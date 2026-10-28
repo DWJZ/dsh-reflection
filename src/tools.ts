@@ -233,16 +233,20 @@ function rememberTool(deps: MemoryDeps) {
         evidence: provenance.evidence,
         sourceTexts: provenance.sourceTexts,
       }
-      if (args.mode === 'add') {
-        return addMemory(options, {
+      const result = args.mode === 'add'
+        ? await addMemory(options, {
           ...common,
           scope: args.scope,
           category: args.category,
           projectId: project?.project_id,
         })
-      }
-      if (args.mode === 'update') return updateMemory(options, { ...common, id: args.target_id, projectId: project?.project_id })
-      return supersedeMemory(options, { ...common, id: args.target_id, projectId: project?.project_id })
+        : args.mode === 'update'
+          ? await updateMemory(options, { ...common, id: args.target_id, projectId: project?.project_id })
+          : await supersedeMemory(options, { ...common, id: args.target_id, projectId: project?.project_id })
+      // The summary is what a later request reads, so a write waits for it: a
+      // stale summary would describe Memory as it was before this call.
+      await deps.refreshSummary?.(exec.agent)
+      return result
     },
     presentCall: (args: Record<string, unknown>) => ({
       card: 'generic',

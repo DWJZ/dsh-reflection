@@ -3,8 +3,7 @@
  *
  * Every deployment-varying choice lives here so a deployment changes it from
  * `cordis.patch.yml` instead of editing code. Invalid values fail loud at load
- * and name the offending field; the cross-field rule a per-field schema cannot
- * express (the index budget split must sum to 1) is checked here too.
+ * and name the offending field.
  *
  * `memoryDir` is deliberately absent: Memory must be under the harness home, so
  * the location is derived and a deployment cannot point it elsewhere.
@@ -22,8 +21,8 @@ import { hostname } from 'node:os'
 export const DEFAULTS = Object.freeze({
   enabled: true,
   dshHome: '',
-  indexBudgetBytes: 6000,
-  indexBudgetSplit: { user: 0.4, project: 0.6 },
+  summaryBudgetBytes: 1200,
+  summaryMaxOutputTokens: 400,
   retrievalTopK: 8,
   // The same list `@deepseek-ai/dsh-agent-instructions` resolves a project root
   // with. A local plugin cannot read that resolved config, so the two are kept in
@@ -56,9 +55,6 @@ export const DEFAULTS = Object.freeze({
   }),
 })
 
-/** Tolerance for the floating-point index budget split sum. */
-const SPLIT_TOLERANCE = 1e-9
-
 /**
  * Normalize the plugin configuration, failing loud on an unusable value.
  * @param config - raw config object from cordis.yml, possibly absent.
@@ -77,8 +73,8 @@ export function resolveConfig(
     sessionEvents: booleanSetting(raw.sessionEvents, DEFAULTS.sessionEvents, 'sessionEvents'),
     dshHome,
     memoryDir: resolveMemoryDir(dshHome),
-    indexBudgetBytes: integerSetting(raw.indexBudgetBytes, DEFAULTS.indexBudgetBytes, 'indexBudgetBytes', 0),
-    indexBudgetSplit: splitSetting(raw.indexBudgetSplit),
+    summaryBudgetBytes: integerSetting(raw.summaryBudgetBytes, DEFAULTS.summaryBudgetBytes, 'summaryBudgetBytes', 0),
+    summaryMaxOutputTokens: integerSetting(raw.summaryMaxOutputTokens, DEFAULTS.summaryMaxOutputTokens, 'summaryMaxOutputTokens', 1),
     retrievalTopK: integerSetting(raw.retrievalTopK, DEFAULTS.retrievalTopK, 'retrievalTopK', 1),
     projectRootMarkers: markersSetting(raw.projectRootMarkers),
     lockTimeoutMs: integerSetting(raw.lockTimeoutMs, DEFAULTS.lockTimeoutMs, 'lockTimeoutMs', 1),
@@ -188,25 +184,6 @@ function numberSetting(value: unknown, fallback: number, field: string, minimum:
     throw new TypeError(`dsh-reflection: config ${field} must be a number >= ${String(minimum)}, got ${JSON.stringify(value)}`)
   }
   return value
-}
-
-/**
- * Read the index budget split, which must be non-negative and sum to 1.
- * @param value - raw value from cordis.yml.
- * @returns the validated split.
- */
-function splitSetting(value: unknown): { user: number; project: number } {
-  const source = value as Record<string, unknown>
-  if (value === undefined) return { ...DEFAULTS.indexBudgetSplit }
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError(`dsh-reflection: config indexBudgetSplit must be an object, got ${JSON.stringify(value)}`)
-  }
-  const user = numberSetting(source.user, DEFAULTS.indexBudgetSplit.user, 'indexBudgetSplit.user', 0)
-  const project = numberSetting(source.project, DEFAULTS.indexBudgetSplit.project, 'indexBudgetSplit.project', 0)
-  if (Math.abs(user + project - 1) >= SPLIT_TOLERANCE) {
-    throw new TypeError(`dsh-reflection: config indexBudgetSplit must sum to 1, got ${String(user + project)}`)
-  }
-  return { user, project }
 }
 
 /**

@@ -30,10 +30,12 @@ import { projectLayout, registryLayout, tombstoneLayout, userLayout, consolidati
 import { readRegistry, resolveProject } from './registry.js'
 import { cleanupStaleTemps, readStore } from './jsonstore.js'
 import { rebuildView } from './views.js'
-import { buildProvenance, createTurnTracker, registerMemoryIndex, registerMemoryPolicy } from './inject.js'
+import { buildProvenance, createTurnTracker, registerMemorySummary, registerMemoryPolicy } from './inject.js'
 import { registerMemoryTools } from './tools.js'
 import { registerMemoryCommands } from './commands.js'
-import { renderMemoryIndex } from './retention.js'
+import { activeRecords } from './retention.js'
+import { readSummaryDocument, renderMemorySummary } from './summary.js'
+import { createSummaryService } from './summary-service.js'
 import { resolveEnabled, writeEnabled } from './settings.js'
 import type { PluginConfig } from './settings.js'
 import { createCollector } from './consolidation/collector.js'
@@ -107,6 +109,14 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
   const projectsByCwd = new Map()
   /** Sessions whose attribution was already recorded, so it is written once. */
   const announcedProjects = new Set()
+  /** Keeps each scope's cached summary in step with its store, off the request path. */
+  const summaryService = createSummaryService({
+    scopes,
+    projectFor: (agent: MemoryAgent) => projectsByCwd.get(cwdOf(agent)) ?? null,
+    llmScope: () => llmScope ?? undefined,
+    logger,
+    maxOutputTokens: settings.summaryMaxOutputTokens,
+  })
   let enabled = resolveEnabled(settings.memoryDir, settings.enabled)
   let runtimeFiber: { dispose(): Promise<void> } | null = null
   let llmScope: Context | null = null
@@ -136,6 +146,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
     // cached project, or the next command would still see the old one.
     resolveProjectFor: (agent: MemoryAgent) => resolveForAgent(agent),
     consolidationEnabled: () => settings.consolidation.enabled,
+    refreshSummary: (agent: MemoryAgent) => summaryService.refresh(agent),
     consolidate: (
       agent: MemoryAgent,
       runOptions?: { dryRun?: boolean; trigger?: string; signal?: AbortSignal | undefined },
@@ -156,7 +167,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
     if (runtimeFiber !== null) return
     runtimeFiber = ctx.inject(['systemPrompt', 'tools'], (scope) => {
       registerMemoryPolicy(scope)
-      registerMemoryIndex(scope, (agent: MemoryAgent) => renderIndex(deps, agent))
+      registerMemorySummary(scope, (agent: MemoryAgent) => renderSummary(deps, agent))
       registerMemoryTools(scope, deps)
     })
   }
@@ -351,6 +362,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
       // while the plugin is being taken down.
       consolidation?.cancelPending()
       await consolidation?.whenSettled()
+      await summaryService.whenSettled()
       await unmountRuntime()
       tracker.dispose()
       projectsByCwd.clear()
@@ -362,28 +374,62 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
 }
 
 /**
- * Render the injected index for one agent.
+ * Render the injected Memory summary for one agent.
  *
- * A canonical read failure propagates rather than degrading to an empty index.
+ * The facts are not injected: what travels is the cached, model-written summary
+ * plus the paths of the files that hold the records. A cache that describes an
+ * older revision is served anyway — a slightly stale summary is worth far more
+ * than a missing one — while a background refresh brings it up to date.
+ *
+ * A canonical read failure propagates rather than degrading to an empty summary.
  * `memories.json` is the source of truth, so a store that violates its own
  * schema is a fault to report, not a Memory that happens to be empty: swallowing
  * it would leave the agent quietly amnesiac, which is harder to notice and
- * harder to diagnose than a turn that names the broken file. The throw reaches
- * the model request through this context function, so the turn stops there.
- *
- * A store that is simply absent is not corruption: `readStore` returns an empty
- * store for it, which is what a first run looks like.
+ * harder to diagnose than a turn that names the broken file.
  * @param deps - resolved settings and layouts.
  * @param agent - the agent whose request is being assembled.
- * @returns the index text, or an empty string when there is nothing to inject.
+ * @returns the summary text, or an empty string when there is nothing to inject.
  * @throws when a canonical store cannot be read or violates its schema.
  */
-function renderIndex(deps: MemoryDeps, agent: MemoryAgent) {
+function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
   const project = deps.projectFor(agent)
-  return renderMemoryIndex({
-    user: readStore(deps.scopes.user.storePath).records,
-    project: project === null ? [] : readStore(deps.scopes.project(project.project_id).storePath).records,
-  }, { budgetBytes: deps.config.indexBudgetBytes, split: deps.config.indexBudgetSplit })
+  const userStore = readStore(deps.scopes.user.storePath)
+  const projectLayout = project === null ? undefined : deps.scopes.project(project.project_id)
+  const projectStore = projectLayout === undefined ? undefined : readStore(projectLayout.storePath)
+  const userRecords = activeRecords(userStore.records)
+  const projectRecords = projectStore === undefined ? [] : activeRecords(projectStore.records)
+  if (userRecords.length === 0 && projectRecords.length === 0) return ''
+
+  const userSummary = readSummaryDocument(deps.scopes.user.summaryPath)
+  const projectSummary = projectLayout === undefined ? undefined : readSummaryDocument(projectLayout.summaryPath)
+  const stale = userSummary === undefined || userSummary.revision !== userStore.revision
+    || (projectStore !== undefined && (projectSummary === undefined || projectSummary.revision !== projectStore.revision))
+  if (stale) deps.refreshSummary?.(agent)
+
+  const byCategory: Record<string, number> = {}
+  let updatedAt = ''
+  for (const record of [...userRecords, ...projectRecords]) {
+    byCategory[record.category] = (byCategory[record.category] ?? 0) + 1
+    if (record.updated_at > updatedAt) updatedAt = record.updated_at
+  }
+  const parts: string[] = []
+  if (userSummary !== undefined) parts.push(`user: ${userSummary.text.trim()}`)
+  if (projectSummary !== undefined) parts.push(`project: ${projectSummary.text.trim()}`)
+
+  return renderMemorySummary({
+    summaryText: parts.join('\n\n'),
+    counts: {
+      user: userRecords.length,
+      project: projectRecords.length,
+      byCategory,
+      ...updatedAt === '' ? {} : { updatedAt },
+    },
+    paths: {
+      user: deps.scopes.user.viewPath,
+      ...projectLayout === undefined ? {} : { project: projectLayout.viewPath },
+    },
+    budgetBytes: deps.config.summaryBudgetBytes,
+  })
 }
 
 /**

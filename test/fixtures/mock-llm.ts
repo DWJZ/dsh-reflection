@@ -63,6 +63,12 @@ const SEARCH_QUERY = process.env.DSH_MEMORY_MOCK_QUERY ?? 'package manager'
 /** Marker that identifies the consolidation call's system prompt. */
 const CONSOLIDATION_MARKER = 'You maintain long-term Memory'
 
+/** Marker that identifies the summary call's system prompt. */
+const SUMMARY_MARKER = 'You write a compact summary of a long-term Memory store'
+
+/** What a scripted summary call answers. Deliberately free of any stored fact. */
+const SUMMARY_TEXT = '已记录用户的编码偏好和本项目的工具约定。'
+
 /** What a scripted consolidation run should learn, when it should learn anything. */
 const LEARNED = process.env.DSH_MEMORY_MOCK_LEARNED
 
@@ -143,6 +149,12 @@ class MemoryMockAdapter extends LlmAdapter {
       yield * answer('session title')
       return
     }
+    // The summary call is neither a turn nor a plan: it asks for a description of
+    // what Memory holds, and its answer is cached beside the records.
+    if ((options.system ?? '').includes(SUMMARY_MARKER)) {
+      yield * answer(SUMMARY_TEXT)
+      return
+    }
     // Automatic consolidation is a different kind of call: it carries the memory
     // policy as its system prompt and asks for a plan rather than a turn. The
     // plan cites a sequence number the payload actually contains, as a real
@@ -177,7 +189,10 @@ class MemoryMockAdapter extends LlmAdapter {
       return
     }
     if (SUPERSEDE) {
-      if (!transcript.includes('memory_search')) {
+      // The tool-call block, not the name: the Memory policy section legitimately
+      // mentions `memory_search`, and a substring test would read the rule as a
+      // search that had already happened.
+      if (!transcript.includes('"name":"memory_search"')) {
         yield * call('memory_search', { query: SEARCH_QUERY }, 'call_dsh_memory_search')
         return
       }

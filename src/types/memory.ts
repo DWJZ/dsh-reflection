@@ -63,6 +63,10 @@ export interface ScopeLayout {
   storePath: string
   lockPath: string
   viewPath: string
+  /** Directory holding one Markdown file per active record. */
+  recordsDir: string
+  /** Model-written summary cache, regenerated when the store revision moves. */
+  summaryPath: string
 }
 
 /**

@@ -60,6 +60,8 @@ export function scopeLayout(scopeDir: string): ScopeLayout {
     storePath: join(dir, 'memories.json'),
     lockPath: join(dir, 'memories.json.lock'),
     viewPath: join(dir, 'MEMORY.md'),
+    recordsDir: join(dir, 'memories'),
+    summaryPath: join(dir, 'summary.md'),
   }
 }
 
