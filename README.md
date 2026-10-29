@@ -76,7 +76,10 @@ The summary text is written by the model: after a write — and on the next read
 after a consolidation — the Session's own model is asked to describe what Memory
 holds, and the answer is cached in `summary.md` beside the records. A write waits
 for that refresh, so the summary never describes Memory as it was before the call
-that just returned. Injection only reads the cache; it never calls a model.
+that just returned. Injection only reads the cache; it never calls a model. The
+summary call has no plugin-side output cap: it inherits the provider's own limit,
+so a reasoning model cannot spend a fixed budget on thinking and leave the answer
+truncated.
 
 The fixed part of the envelope — the counts, the index paths, and the pointer to
 per-record files — is what makes the summary actionable, so it is never dropped
@@ -125,7 +128,6 @@ Set fields on the plugin row in the profile's `cordis.patch.yml`:
 | `dshHome` | `$DSH_HOME`, else `~/.dsh` | Harness home; Memory always sits below it |
 | `sessionEvents` | `false` | the only switch for the rows this plugin writes into the Session log. The harness offers a plugin no supported way to append Session events, so this uses an unknown type with the `ignorable` marker — a side door, not an interface — and stays off until a deployment asks |
 | `summaryBudgetBytes` | `1200` | Injected summary size, in UTF-8 bytes |
-| `summaryMaxOutputTokens` | `400` | Cap on the summary the model may return |
 | `retrievalTopK` | `8` | Default result count for `memory_search` |
 | `projectRootMarkers` | `['.git']` | Names that identify a project root |
 | `lockTimeoutMs` | `10000` | Wait for the store lock before failing |

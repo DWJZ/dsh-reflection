@@ -31,8 +31,6 @@ export interface SummaryServiceOptions {
   logger?: { warn(message: string | Error): void; debug?(message: string): void } | undefined
   /** Injectable clock, in epoch milliseconds. */
   now?(): number
-  /** Cap on the summary the model may return. */
-  maxOutputTokens: number
 }
 
 /**
@@ -43,6 +41,8 @@ export interface SummaryServiceOptions {
 export function createSummaryService(options: SummaryServiceOptions) {
   /** One run per summary file, so two renders cannot ask the same question twice. */
   const inFlight = new Map<string, Promise<void>>()
+  /** Summary files whose last failure has been reported, so a broken route warns once. */
+  const warned = new Set<string>()
   /** Every run still executing, so teardown can wait for them. */
   const runs = new Set<Promise<void>>()
 
@@ -78,7 +78,6 @@ export function createSummaryService(options: SummaryServiceOptions) {
         scopeLabel,
         ...projectPath === undefined ? {} : { projectPath },
       }),
-      maxTokens: options.maxOutputTokens,
       label: 'summary',
     })
     writeSummaryDocument(layout.summaryPath, {
@@ -106,14 +105,24 @@ export function createSummaryService(options: SummaryServiceOptions) {
     const key = layout.summaryPath
     const existing = inFlight.get(key)
     if (existing !== undefined) return existing
+    let failed = false
     const run = refreshOne(agent, layout, scopeLabel, projectPath)
       .catch((failure: unknown) => {
         // A summary that cannot be written is a stale cache, not a failed turn:
         // injection keeps serving the previous text and the next read retries.
-        options.logger?.debug?.(`dsh-reflection: could not refresh the Memory summary: ${failureMessage(failure)}`)
+        // The first failure is visible; repeated retries stay at debug so a
+        // broken route does not flood the log.
+        failed = true
+        const message = `dsh-reflection: could not refresh the Memory summary at ${key}: ${failureMessage(failure)}`
+        if (warned.has(key)) options.logger?.debug?.(message)
+        else {
+          warned.add(key)
+          options.logger?.warn?.(message)
+        }
       })
       .finally(() => {
         inFlight.delete(key)
+        if (!failed) warned.delete(key)
       })
     inFlight.set(key, run)
     runs.add(run)

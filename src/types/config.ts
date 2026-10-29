@@ -49,8 +49,6 @@ export interface MemorySettings {
   memoryDir: string
   /** Largest injected Memory summary, in UTF-8 bytes. */
   summaryBudgetBytes: number
-  /** Cap on the summary the model may return. */
-  summaryMaxOutputTokens: number
   /** How many records a search returns. */
   retrievalTopK: number
   /** Markers that identify a project root, kept in step with the harness. */

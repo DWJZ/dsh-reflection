@@ -37,7 +37,6 @@ const base = resolveWith({})
 check('enabled defaults to true', base.enabled === true)
 check('the memory root is derived', base.memoryDir === join('/tmp/dsh-reflection-config-spec', 'memory'))
 check('the summary budget defaults to 1200 bytes', base.summaryBudgetBytes === 1200)
-check('the summary output cap defaults to 400 tokens', base.summaryMaxOutputTokens === 400)
 check('retrievalTopK defaults to 8', base.retrievalTopK === 8)
 check('projectRootMarkers defaults to .git',
   base.projectRootMarkers.length === 1 && base.projectRootMarkers[0] === '.git')
@@ -48,7 +47,6 @@ console.log('every default is overridable')
 const overridden = resolveWith({
   enabled: false,
   summaryBudgetBytes: 900,
-  summaryMaxOutputTokens: 256,
   retrievalTopK: 3,
   projectRootMarkers: ['.git', '.hg'],
   lockTimeoutMs: 250,
@@ -59,7 +57,6 @@ const overridden = resolveWith({
 })
 check('enabled', overridden.enabled === false)
 check('summaryBudgetBytes', overridden.summaryBudgetBytes === 900)
-check('summaryMaxOutputTokens', overridden.summaryMaxOutputTokens === 256)
 check('retrievalTopK', overridden.retrievalTopK === 3)
 check('projectRootMarkers', overridden.projectRootMarkers.join(',') === '.git,.hg')
 check('lockTimeoutMs', overridden.lockTimeoutMs === 250)
@@ -71,7 +68,6 @@ check('evidenceQuoteMaxChars', overridden.evidenceQuoteMaxChars === 10)
 console.log('invalid values fail loud and name the field')
 check('enabled rejects a non-boolean', rejects({ enabled: 'yes' }, 'enabled'))
 check('summaryBudgetBytes rejects a negative value', rejects({ summaryBudgetBytes: -1 }, 'summaryBudgetBytes'))
-check('summaryMaxOutputTokens rejects zero', rejects({ summaryMaxOutputTokens: 0 }, 'summaryMaxOutputTokens'))
 check('retrievalTopK rejects zero', rejects({ retrievalTopK: 0 }, 'retrievalTopK'))
 check('retrievalTopK rejects a fraction below the minimum', rejects({ retrievalTopK: 0.5 }, 'retrievalTopK'))
 check('lockTimeoutMs rejects zero', rejects({ lockTimeoutMs: 0 }, 'lockTimeoutMs'))

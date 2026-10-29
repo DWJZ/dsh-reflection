@@ -117,7 +117,6 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
     projectFor: (agent: MemoryAgent) => projectsByCwd.get(cwdOf(agent)) ?? null,
     llmScope: () => llmScope ?? undefined,
     logger,
-    maxOutputTokens: settings.summaryMaxOutputTokens,
   })
   let enabled = resolveEnabled(settings.memoryDir, settings.enabled)
   let runtimeFiber: { dispose(): Promise<void> } | null = null
