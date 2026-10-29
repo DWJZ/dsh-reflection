@@ -51,7 +51,8 @@ jobs:
     name: behavior (real model, tag or manual)
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Two arms plus a harness checkout, install, and build.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -111,7 +112,7 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DSH_REPO: ${{ github.workspace }}/harness
-        run: npm run eval:behavior
+        run: npm run eval:behavior -- --control
 
       - name: Summarize
         if: always()

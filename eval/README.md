@@ -58,6 +58,42 @@ Scoring is rule-based, not judged: `all` (every string must appear), `none`
 (regexes that must not), `abstain` (the answer must decline). That keeps V1
 cheap and reproducible; an LLM judge is a later layer, not a prerequisite.
 
+### The control arm
+
+`--control` runs every scenario a second time with the plugin mounted
+`enabled: false`: no Memory tools, no injected summary, no policy. The rule is
+**not** that the control must fail — only that it must not do better than Memory.
+A scenario where both do equally well is reported as *no difference*, which means
+the question is answerable without Memory and does not currently discriminate.
+
+Six details make the control honest, and each was added after watching a
+control cheat:
+
+- **The control pass runs first**, before any Memory arm has written a store: a
+  model with shell access walks the filesystem, and another scenario's store is
+  as good as its own.
+- Its sessions get a **fresh harness home each, deleted afterwards**, because a
+  shared home keeps the earlier transcript and the model greps the fact out of it.
+- Seeding is skipped, so the facts are not on disk for a shell call to find.
+- **Workspace instruction files are disabled in both arms**, and each session's
+  fixture project is cleaned afterwards. Without this, a model that cannot use
+  Memory writes the fact into `AGENTS.md`; the next session then reads it from the
+  injected instructions, and the control answers correctly without Memory.
+- **Every run mints a random token into the facts and their expectations**
+  (`build:edge-{{run}}`, `release/2026-11-{{run}}`, …). The dataset on disk holds
+  the placeholder, not the answer, so a model that greps the repository — or an
+  older report — finds nothing it can use.
+- **The control is told not to use tools** ("answer from the current context;
+  say you don't know"). Otherwise it spends minutes searching the disk for a fact
+  the token makes unfindable; the instruction keeps the run short and removes the
+  last route around Memory.
+- The control runs only for scenarios that have a scored session; artifact-only
+  scenarios compare nothing and are skipped. A session that hits the timeout is
+  retried once before it is scored — a slow provider is not a Memory regression.
+
+The control roughly doubles the token cost of a run; it is worth it because it
+turns "the answer was right" into "the answer was right because of Memory".
+
 ```sh
 DEEPSEEK_API_KEY=… npm run eval:behavior
 npm run eval:check                      # config only: CLI path, scenarios, model route

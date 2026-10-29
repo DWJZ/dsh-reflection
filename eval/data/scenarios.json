@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 7,
   "model": {
     "provider": "deepseek-official",
     "model": "deepseek-flash",
@@ -15,7 +15,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "记住：这个项目用 pnpm 管理依赖，构建命令是 pnpm build。"
+            "task": "记住：这个项目用 pnpm 管理依赖，构建命令是 pnpm run build:edge-{{run}}。"
           }
         },
         {
@@ -23,18 +23,18 @@
             "scope": "project",
             "project": "alpha",
             "contains": [
-              "pnpm"
+              "build:edge-{{run}}"
             ]
           }
         },
         {
           "session": {
             "project": "alpha",
-            "task": "这个项目用什么包管理器？只回答一句话。"
+            "task": "这个项目的构建命令是什么？只回答命令本身。"
           },
           "expect": {
             "all": [
-              "pnpm"
+              "build:edge-{{run}}"
             ]
           }
         }
@@ -50,25 +50,25 @@
         {
           "session": {
             "project": "alpha",
-            "task": "记住：我偏好中文回答，技术术语保留英文。"
+            "task": "记住：我偏好中文回答，并且每次回答开头加一行 TL;DR-{{run}}。"
           }
         },
         {
           "assertStore": {
             "scope": "user",
             "contains": [
-              "中文"
+              "TL;DR-{{run}}"
             ]
           }
         },
         {
           "session": {
             "project": "beta",
-            "task": "用户偏好用什么语言回答？只回答一句话。"
+            "task": "用户要求每次回答开头加什么？只回答那一行。"
           },
           "expect": {
             "all": [
-              "中文"
+              "TL;DR-{{run}}"
             ]
           }
         }
@@ -121,7 +121,7 @@
             "records": [
               {
                 "category": "state",
-                "content": "这个项目用 npm 管理依赖。"
+                "content": "这个项目的构建命令是 npm run build。"
               }
             ]
           }
@@ -130,18 +130,18 @@
           "supersede": {
             "scope": "project",
             "project": "alpha",
-            "from": "这个项目用 npm 管理依赖。",
-            "to": "这个项目用 pnpm 管理依赖。"
+            "from": "这个项目的构建命令是 npm run build。",
+            "to": "这个项目的构建命令是 pnpm run build:edge-{{run}}。"
           }
         },
         {
           "session": {
             "project": "alpha",
-            "task": "这个项目用什么包管理器？只回答一句话。"
+            "task": "这个项目的构建命令是什么？只回答命令本身。"
           },
           "expect": {
             "all": [
-              "pnpm"
+              "build:edge-{{run}}"
             ]
           }
         },
@@ -150,10 +150,10 @@
             "scope": "project",
             "project": "alpha",
             "contains": [
-              "pnpm"
+              "build:edge-{{run}}"
             ],
             "excludesExact": [
-              "这个项目用 npm 管理依赖。"
+              "这个项目的构建命令是 npm run build。"
             ]
           }
         },
@@ -162,7 +162,7 @@
             "scope": "project",
             "project": "alpha",
             "contains": [
-              "pnpm"
+              "build:edge-{{run}}"
             ]
           }
         }
@@ -181,7 +181,7 @@
             "records": [
               {
                 "category": "state",
-                "content": "alpha 的发布分支是 release/2026-11。"
+                "content": "alpha 的发布分支是 release/2026-11-{{run}}。"
               },
               {
                 "category": "state",
@@ -221,7 +221,7 @@
           },
           "expect": {
             "all": [
-              "release/2026-11"
+              "release/2026-11-{{run}}"
             ]
           }
         }
@@ -236,7 +236,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "我们决定这个项目统一改用 pnpm 管理依赖。另外，我今天喝了咖啡。我的 API key 是 sk-eval-0123456789abcdef，别记下来。"
+            "task": "我们决定这个项目统一改用 pnpm 管理依赖，构建命令定为 pnpm run build:edge-{{run}}。另外，我今天喝了咖啡。我的 API key 是 sk-eval-0123456789abcdef，别记下来。"
           },
           "drive": true
         },
@@ -245,11 +245,22 @@
             "scope": "project",
             "project": "alpha",
             "contains": [
-              "pnpm"
+              "build:edge-{{run}}"
             ],
             "excludes": [
               "咖啡",
               "sk-eval"
+            ]
+          }
+        },
+        {
+          "session": {
+            "project": "alpha",
+            "task": "这个项目的构建命令是什么？只回答命令本身。"
+          },
+          "expect": {
+            "all": [
+              "build:edge-{{run}}"
             ]
           }
         }
@@ -272,7 +283,7 @@
               },
               {
                 "category": "state",
-                "content": "alpha 的发布分支是 release/2026-11。"
+                "content": "alpha 的发布分支是 release/2026-11-{{run}}。"
               },
               {
                 "category": "state",
@@ -323,7 +334,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "记住：这个项目用 npm 管理依赖。"
+            "task": "记住：这个项目的构建命令是 npm run build。"
           }
         },
         {
@@ -331,14 +342,14 @@
             "scope": "project",
             "project": "alpha",
             "contains": [
-              "npm"
+              "npm run build"
             ]
           }
         },
         {
           "session": {
             "project": "alpha",
-            "task": "现在改用 pnpm 了。把这条记忆更新成 pnpm，不要留下旧的 npm 那条。"
+            "task": "现在改用 pnpm 了，构建命令是 pnpm run build:edge-{{run}}。把这条记忆更新掉，不要留下旧的。"
           }
         },
         {
@@ -346,10 +357,21 @@
             "scope": "project",
             "project": "alpha",
             "contains": [
-              "pnpm"
+              "build:edge-{{run}}"
             ],
             "excludesExact": [
-              "这个项目用 npm 管理依赖。"
+              "这个项目的构建命令是 npm run build。"
+            ]
+          }
+        },
+        {
+          "session": {
+            "project": "alpha",
+            "task": "这个项目的构建命令是什么？只回答命令本身。"
+          },
+          "expect": {
+            "all": [
+              "build:edge-{{run}}"
             ]
           }
         }

@@ -18,7 +18,8 @@
  * checkout it belongs to.
  */
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { renderBehaviorReport } from './report.mjs'
@@ -32,8 +33,10 @@ const DATA = JSON.parse(readFileSync(join(EVAL, 'data/scenarios.json'), 'utf8'))
 const BASELINE_PATH = join(EVAL, 'baseline.json')
 const REPORT_PATH = join(EVAL, 'report-behavior.json')
 const REPORT_MD = join(EVAL, 'report-behavior.md')
-const SESSION_TIMEOUT_MS = 180_000
+const SESSION_TIMEOUT_MS = 240_000
 
+/** One token per run, so the expected answer exists nowhere on disk before it runs. */
+const RUN_TOKEN = randomUUID().slice(0, 8)
 const CONFIG_ONLY = process.argv.includes('--check')
 const UPDATE_BASELINE = process.argv.includes('--update-baseline')
 const MOCK = process.argv.includes('--mock')
@@ -44,6 +47,8 @@ const ONLY = (() => {
 })()
 /** Keep the scratch tree so a failed run can be inspected. */
 const KEEP = process.argv.includes('--keep')
+/** Run every scenario a second time with Memory switched off, as a control arm. */
+const CONTROL = process.argv.includes('--control')
 /** Route the scripted adapter owns; used by `--mock` to check the plumbing without a key. */
 const MOCK_MODEL = { provider: 'dsh-reflection-mock', model: 'dsh-reflection-mock', reasoningEffort: undefined }
 
@@ -51,6 +56,22 @@ const { userLayout, projectLayout, registryLayout, tombstoneLayout } = await imp
 const { bindProject } = await import(pathToFileURL(join(PLUGIN, 'src/registry.ts')).href)
 const { addMemory, supersedeMemory } = await import(pathToFileURL(join(PLUGIN, 'src/actions.ts')).href)
 const { readStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.ts')).href)
+
+/**
+ * Replace the run token in one scenario value.
+ * @param value - any JSON value from the dataset.
+ * @returns the value with `{{run}}` filled in.
+ */
+function fillRunToken(value) {
+  if (typeof value === 'string') return value.replaceAll('{{run}}', RUN_TOKEN)
+  if (Array.isArray(value)) return value.map(fillRunToken)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, fillRunToken(entry)]))
+  }
+  return value
+}
+
+const SCENARIOS = DATA.scenarios.map(fillRunToken)
 
 /** Phrases that count as "no such memory" for an abstention question. */
 const ABSTAIN_PATTERNS = [
@@ -90,8 +111,14 @@ function preflight() {
  * @param options - target project, harness home, model route.
  * @returns the patch path.
  */
-function writeOverlay({ projectDir, home, model, dir, drive }) {
+function writeOverlay({ projectDir, home, model, dir, drive, control }) {
   const lines = [
+    // Workspace instruction files are a second memory channel. Left on, a model
+    // that cannot use Memory writes AGENTS.md instead, and the next session reads
+    // the fact back from it — in either arm.
+    '- id: agent-instructions',
+    '  disabled: true',
+    '',
     '- id: agent-default-model',
     '  config:',
     `    provider: ${JSON.stringify(model.provider)}`,
@@ -105,7 +132,9 @@ function writeOverlay({ projectDir, home, model, dir, drive }) {
     '- insert:',
     '    - id: dsh-reflection',
     `      name: ${JSON.stringify(join(PLUGIN, 'src/index.js'))}`,
-    ...drive === true ? ['      config:', '        sessionEvents: true'] : [],
+    ...control === true
+      ? ['      config:', '        enabled: false']
+      : drive === true ? ['      config:', '        sessionEvents: true'] : [],
     '',
     '    - id: dsh-reflection-eval-usage-spy',
     `      name: ${JSON.stringify(join(PLUGIN, 'eval/fixtures/usage-spy.ts'))}`,
@@ -134,8 +163,14 @@ function writeOverlay({ projectDir, home, model, dir, drive }) {
  * @param options - task, project directory, harness home, model route, scratch dir.
  * @returns the exit code, final text, tool names, and error text.
  */
-async function runSession({ task, projectDir, home, model, dir, drive, usageLog }) {
-  const patch = writeOverlay({ projectDir, home, model, dir, drive })
+async function runSession({ task, projectDir, home, model, dir, drive, usageLog, control }) {
+  const patch = writeOverlay({ projectDir, home, model, dir, drive, control })
+  // The control answers from what it has. Without this it explores the disk for
+  // the fact: slower per session and a second route around Memory, even though
+  // the run token makes the search fruitless.
+  const controlTask = control
+    ? `${task}\n\n（对照运行：不要使用任何工具，只根据当前上下文回答；不知道就说不知道。）`
+    : task
   const env = {
     ...process.env,
     DSH_HOME: home,
@@ -149,17 +184,18 @@ async function runSession({ task, projectDir, home, model, dir, drive, usageLog 
     ...drive === true ? { DSH_MEMORY_DRIVER_LOG: `${usageLog}.driver` } : {},
     ...MOCK ? { DSH_MEMORY_MOCK_TRIGGER: '记住' } : {},
   }
-  const args = ['--import', 'tsx/esm', CLI, '--profile', 'headless', '--patch', patch, '--json', task]
+  const args = ['--import', 'tsx/esm', CLI, '--profile', 'headless', '--patch', patch, '--json', controlTask]
   const cwd = existsSync(join(REPO, 'apps/cli/src/bin.ts')) ? REPO : PLUGIN
   const outcome = await new Promise(settle => {
     const child = spawn(process.execPath, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
-    const guard = setTimeout(() => child.kill('SIGKILL'), SESSION_TIMEOUT_MS)
+    let timedOut = false
+    const guard = setTimeout(() => { timedOut = true; child.kill('SIGKILL') }, SESSION_TIMEOUT_MS)
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', chunk => { stdout += String(chunk) })
     child.stderr.on('data', chunk => { stderr += String(chunk) })
-    child.on('error', error => { clearTimeout(guard); settle({ code: -1, stdout, stderr: `${stderr}\n${String(error)}` }) })
-    child.on('close', code => { clearTimeout(guard); settle({ code, stdout, stderr }) })
+    child.on('error', error => { clearTimeout(guard); settle({ code: -1, stdout, stderr: `${stderr}\n${String(error)}`, timedOut }) })
+    child.on('close', code => { clearTimeout(guard); settle({ code, stdout, stderr, timedOut }) })
   })
   const events = outcome.stdout.split('\n').filter(Boolean).flatMap(line => {
     try { return [JSON.parse(line)] } catch { return [] }
@@ -174,8 +210,22 @@ async function runSession({ task, projectDir, home, model, dir, drive, usageLog 
     tools,
     stderr: outcome.stderr.trim(),
     failure,
+    timedOut: outcome.timedOut === true,
     sessionId: typeof sessionId === 'string' ? sessionId : undefined,
     usage: readUsage(usageLog, typeof sessionId === 'string' ? sessionId : undefined),
+  }
+}
+
+/**
+ * Remove everything a session left in the fixture project except its `.git`
+ * marker, so a scratch file cannot carry a fact into the next session.
+ * @param projectDir - the fixture project directory.
+ * @returns nothing.
+ */
+function cleanProject(projectDir) {
+  for (const name of readdirSync(projectDir)) {
+    if (name === '.git') continue
+    rmSync(join(projectDir, name), { recursive: true, force: true })
   }
 }
 
@@ -334,8 +384,8 @@ async function supersede({ home, scope, projectId, from, to }) {
  * @param index - its position, used to name the scratch directory.
  * @returns the scenario result.
  */
-async function runScenario(scenario, index) {
-  const dir = join(ROOT, `${String(index)}-${scenario.name}`)
+async function runScenario(scenario, index, control = false) {
+  const dir = join(ROOT, `${String(index)}-${scenario.name}${control ? '-control' : ''}`)
   const home = join(dir, 'home')
   mkdirSync(home, { recursive: true })
   const projectDirs = new Map()
@@ -356,42 +406,76 @@ async function runScenario(scenario, index) {
     const label = `${String(stepIndex + 1)}.${Object.keys(step).join('+')}`
     try {
       if (step.seed !== undefined) {
+        // The control arm must have nothing to find: seeding it would leave the
+        // facts on disk, and a model with shell access reads them.
+        if (control) continue
         await seed({ home, ...step.seed, ...step.seed.project === undefined ? {} : { projectId: projectIds.get(step.seed.project) } })
         steps.push({ label, pass: true })
       } else if (step.supersede !== undefined) {
+        if (control) continue
         await supersede({ home, ...step.supersede, ...step.supersede.project === undefined ? {} : { projectId: projectIds.get(step.supersede.project) } })
         steps.push({ label, pass: true })
       } else if (step.assertStore !== undefined) {
+        // Artifact assertions describe what the plugin wrote; the control arm has
+        // no plugin, so only the session expectations are compared there.
+        if (control) continue
         const result = checkStore({ home, ...step.assertStore, projectId: name => projectIds.get(name) })
         steps.push({ label, ...result })
       } else if (step.assertSummary !== undefined) {
+        if (control) continue
         const result = checkSummary({ home, ...step.assertSummary, projectId: name => projectIds.get(name) })
         steps.push({ label, ...result })
       } else if (step.session !== undefined) {
         const projectDir = projectDirs.get(step.session.project)
         if (projectDir === undefined) throw new Error(`eval: ${scenario.name} names an unknown project ${step.session.project}`)
         const sessionStarted = Date.now()
-        const session = await runSession({
+        // One fresh harness home per control session: a shared home keeps earlier
+        // transcripts, and a model that greps them recovers the fact without Memory.
+        const sessionHome = control ? join(dir, `home-${String(stepIndex)}`) : home
+        mkdirSync(sessionHome, { recursive: true })
+        let session = await runSession({
           task: step.session.task,
           projectDir,
-          home,
+          home: sessionHome,
           model: MOCK ? MOCK_MODEL : DATA.model,
           dir,
           drive: step.drive === true,
           usageLog,
+          control,
         })
+        if (session.timedOut === true) {
+          // A slow provider is not a Memory regression; give the session one more
+          // window before the step is scored.
+          mkdirSync(sessionHome, { recursive: true })
+          session = await runSession({
+            task: step.session.task,
+            projectDir,
+            home: sessionHome,
+            model: MOCK ? MOCK_MODEL : DATA.model,
+            dir,
+            drive: step.drive === true,
+            usageLog,
+            control,
+          })
+        }
         sessionDurations.push(Date.now() - sessionStarted)
         tokens.inputTokens += session.usage.inputTokens
         tokens.outputTokens += session.usage.outputTokens
+        // The control arm keeps nothing: a later control session must not find
+        // this transcript (and the fact its task carried) on disk. Both arms lose
+        // the project's scratch files for the same reason.
+        cleanProject(projectDir)
+        if (control && !KEEP) rmSync(sessionHome, { recursive: true, force: true })
+        const scored = step.expect !== undefined
         if (session.failure !== undefined) {
-          steps.push({ label, ...fail(session.failure) })
+          steps.push({ label, ...fail(session.failure), scored })
         } else if (session.code !== 0) {
-          steps.push({ label, ...fail(`exit ${String(session.code)}: ${session.stderr.slice(0, 2000)}`) })
+          steps.push({ label, ...fail(`exit ${String(session.code)}: ${session.stderr.slice(0, 2000)}`), scored })
         } else if (step.expect !== undefined) {
           const result = checkAnswer(session.answer, step.expect)
-          steps.push({ label, ...result, answer: session.answer, tools: session.tools })
+          steps.push({ label, ...result, answer: session.answer, tools: session.tools, scored })
         } else {
-          steps.push({ label, pass: true, answer: session.answer, tools: session.tools })
+          steps.push({ label, pass: true, answer: session.answer, tools: session.tools, scored })
         }
       } else {
         throw new Error(`eval: unknown step ${JSON.stringify(step)}`)
@@ -421,20 +505,60 @@ if (CONFIG_ONLY) {
 
 const ROOT = mkdtempSync(join(tmpdir(), 'dsh-reflection-eval-'))
 const scenarios = []
-const selected = ONLY === undefined ? DATA.scenarios : DATA.scenarios.filter(scenario => scenario.name.includes(ONLY))
+const controls = new Map()
+const selected = ONLY === undefined ? SCENARIOS : SCENARIOS.filter(scenario => scenario.name.includes(ONLY))
+
+// The control pass runs first, before any Memory arm has written a store: a
+// model with shell access walks the filesystem, and a store from another
+// scenario would be as good as its own.
+if (CONTROL) {
+  console.log('\n## control arm (Memory off)')
+  for (const [index, scenario] of selected.entries()) {
+    // Artifact-only scenarios have nothing the control can compare; skipping them
+    // keeps the run short without weakening the comparison.
+    if (!scenario.steps.some(step => step.session !== undefined && step.expect !== undefined)) continue
+    const control = await runScenario(scenario, index, true)
+    controls.set(scenario.name, control)
+    console.log(`  ${control.pass ? 'PASS' : 'FAIL'} ${scenario.name} (${String(control.durationMs)} ms, ${String(control.tokens.inputTokens)} in / ${String(control.tokens.outputTokens)} out)`)
+  }
+}
+
 for (const [index, scenario] of selected.entries()) {
   process.stdout.write(`\n=== ${scenario.name} ===\n`)
   const result = await runScenario(scenario, index)
-  scenarios.push(result)
   for (const step of result.steps) {
     console.log(`  ${step.pass ? 'ok  ' : 'FAIL'} ${step.label}${step.detail === undefined ? '' : ` — ${step.detail}`}`)
     if (step.answer !== undefined && !step.pass) console.log(`       answer: ${step.answer.slice(0, 300)}`)
   }
   console.log(`  ${result.pass ? 'PASS' : 'FAIL'} ${scenario.name} (${String(result.durationMs)} ms, ${String(result.tokens.inputTokens)} in / ${String(result.tokens.outputTokens)} out)`)
+  if (CONTROL && controls.has(scenario.name)) {
+    const control = controls.get(scenario.name)
+    const scored = arm => {
+      const checks = arm.steps.filter(step => step.scored === true)
+      return { total: checks.length, passed: checks.filter(step => step.pass).length }
+    }
+    const memory = scored(result)
+    const without = scored(control)
+    // The control need not fail: it only must not do better than Memory.
+    const better = without.passed > memory.passed
+    console.log(`  memory ${String(memory.passed)}/${String(memory.total)} vs control ${String(without.passed)}/${String(without.total)}${better ? ' — CONTROL IS BETTER' : ''}`)
+    result.control = {
+      pass: control.pass,
+      better,
+      memory: memory.passed,
+      without: without.passed,
+      scored: memory.total,
+      steps: control.steps,
+      tokens: control.tokens,
+      durationMs: control.durationMs,
+    }
+  }
+  scenarios.push(result)
 }
 if (KEEP) console.log(`scratch kept at ${ROOT}`)
 else rmSync(ROOT, { recursive: true, force: true })
 
+const controlBetter = scenarios.filter(scenario => scenario.control?.better === true)
 const passed = scenarios.filter(scenario => scenario.pass).length
 const durations = scenarios.flatMap(scenario => scenario.sessionDurations).sort((left, right) => left - right)
 const p50 = durations.length === 0 ? 0 : durations[Math.floor(durations.length / 2)]
@@ -451,6 +575,7 @@ const report = {
   dataset: DATA.version,
   scenarios,
   metrics,
+  ...CONTROL && { control: { better: controlBetter.map(scenario => scenario.name), scenarios: scenarios.length } },
   passRate: passed / scenarios.length,
   passed,
   total: scenarios.length,
@@ -459,6 +584,10 @@ writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`)
 writeFileSync(REPORT_MD, renderBehaviorReport(report))
 console.log(`\n${String(passed)}/${String(scenarios.length)} scenarios passed`)
 console.log(`tokens: ${String(metrics.inputTokens)} in / ${String(metrics.outputTokens)} out over ${String(metrics.sessions)} sessions; p50 session ${String(metrics.p50SessionMs)} ms`)
+if (CONTROL) {
+  console.log(`control: ${String(controlBetter.length)} scenario(s) where switching Memory off did better`)
+  if (controlBetter.length > 0) console.error(`  ${controlBetter.map(scenario => `${scenario.name} (memory ${String(scenario.control.memory)}/${String(scenario.control.scored)}, control ${String(scenario.control.without)}/${String(scenario.control.scored)})`).join('; ')}`)
+}
 console.log('note: usage covers agent turns and consolidation audits; summary-refresh calls are not attributed to a session event')
 
 const baseline = existsSync(BASELINE_PATH) ? JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) : undefined
@@ -475,3 +604,4 @@ if (!UPDATE_BASELINE && ONLY === undefined && Array.isArray(baseline?.behavior?.
   }
 }
 if (passed < scenarios.length) process.exitCode = 1
+if (controlBetter.length > 0) process.exitCode = 1
