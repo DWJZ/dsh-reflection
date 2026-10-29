@@ -35,6 +35,13 @@ const SESSION_TIMEOUT_MS = 180_000
 const CONFIG_ONLY = process.argv.includes('--check')
 const UPDATE_BASELINE = process.argv.includes('--update-baseline')
 const MOCK = process.argv.includes('--mock')
+/** Run only the scenarios whose name contains this fragment. */
+const ONLY = (() => {
+  const at = process.argv.indexOf('--only')
+  return at < 0 ? undefined : process.argv[at + 1]
+})()
+/** Keep the scratch tree so a failed run can be inspected. */
+const KEEP = process.argv.includes('--keep')
 /** Route the scripted adapter owns; used by `--mock` to check the plumbing without a key. */
 const MOCK_MODEL = { provider: 'dsh-reflection-mock', model: 'dsh-reflection-mock', reasoningEffort: undefined }
 
@@ -81,7 +88,7 @@ function preflight() {
  * @param options - target project, harness home, model route.
  * @returns the patch path.
  */
-function writeOverlay({ projectDir, home, model, dir }) {
+function writeOverlay({ projectDir, home, model, dir, drive }) {
   const lines = [
     '- id: agent-default-model',
     '  config:',
@@ -96,7 +103,18 @@ function writeOverlay({ projectDir, home, model, dir }) {
     '- insert:',
     '    - id: dsh-reflection',
     `      name: ${JSON.stringify(join(PLUGIN, 'src/index.js'))}`,
+    ...drive === true ? ['      config:', '        sessionEvents: true'] : [],
+    '',
+    '    - id: dsh-reflection-eval-usage-spy',
+    `      name: ${JSON.stringify(join(PLUGIN, 'eval/fixtures/usage-spy.ts'))}`,
   ]
+  if (drive === true) {
+    lines.push(
+      '',
+      '    - id: dsh-reflection-consolidate-on-idle',
+      `      name: ${JSON.stringify(join(PLUGIN, 'test/fixtures/consolidate-on-idle.ts'))}`,
+    )
+  }
   if (MOCK) {
     lines.push(
       '',
@@ -114,8 +132,8 @@ function writeOverlay({ projectDir, home, model, dir }) {
  * @param options - task, project directory, harness home, model route, scratch dir.
  * @returns the exit code, final text, tool names, and error text.
  */
-async function runSession({ task, projectDir, home, model, dir }) {
-  const patch = writeOverlay({ projectDir, home, model, dir })
+async function runSession({ task, projectDir, home, model, dir, drive, usageLog }) {
+  const patch = writeOverlay({ projectDir, home, model, dir, drive })
   const env = {
     ...process.env,
     DSH_HOME: home,
@@ -125,6 +143,8 @@ async function runSession({ task, projectDir, home, model, dir }) {
     // (macOS local runs) or on runners without a working bwrap; the failure text
     // then leaks into answers and costs tokens.
     DSH_PERMISSION_MODE: 'danger-full-access',
+    DSH_EVAL_USAGE_LOG: usageLog,
+    ...drive === true ? { DSH_MEMORY_DRIVER_LOG: `${usageLog}.driver` } : {},
     ...MOCK ? { DSH_MEMORY_MOCK_TRIGGER: '记住' } : {},
   }
   const args = ['--import', 'tsx/esm', CLI, '--profile', 'headless', '--patch', patch, '--json', task]
@@ -143,9 +163,18 @@ async function runSession({ task, projectDir, home, model, dir }) {
     try { return [JSON.parse(line)] } catch { return [] }
   })
   const final = events.filter(event => event.type === 'final').at(-1)
+  const sessionId = events.find(event => event.type === 'session')?.sessionId
   const tools = events.filter(event => event.type === 'tool_call').map(event => String(event.tool))
   const failure = final?.reason?.kind === 'error' ? String(final.reason.error?.message ?? 'model call failed') : undefined
-  return { code: outcome.code, answer: String(final?.text ?? '').trim(), tools, stderr: outcome.stderr.trim(), failure }
+  return {
+    code: outcome.code,
+    answer: String(final?.text ?? '').trim(),
+    tools,
+    stderr: outcome.stderr.trim(),
+    failure,
+    sessionId: typeof sessionId === 'string' ? sessionId : undefined,
+    usage: readUsage(usageLog, typeof sessionId === 'string' ? sessionId : undefined),
+  }
 }
 
 /**
@@ -175,15 +204,73 @@ function checkAnswer(answer, expect) {
  * @param options - harness home, scope, project, expected substrings.
  * @returns the check result.
  */
-function checkStore({ home, scope, project, projectId, contains }) {
+function checkStore({ home, scope, project, projectId, contains, excludes, excludesExact }) {
   const storePath = scope === 'user' ? userLayout(join(home, 'memory')).storePath : projectLayout(join(home, 'memory'), projectId(project)).storePath
   const records = readStore(storePath).records.filter(record => record.status === 'active')
-  for (const needle of contains) {
+  const where = `store ${scope}${project === undefined ? '' : `/${project}`}`
+  for (const needle of contains ?? []) {
     if (!records.some(record => record.content.includes(needle))) {
-      return fail(`store ${scope}${project === undefined ? '' : `/${project}`} has no active record containing ${JSON.stringify(needle)}`)
+      return fail(`${where} has no active record containing ${JSON.stringify(needle)}`)
+    }
+  }
+  for (const pattern of excludes ?? []) {
+    const hit = records.find(record => new RegExp(pattern, 'iu').test(record.content))
+    if (hit !== undefined) {
+      return fail(`${where} still holds ${JSON.stringify(hit.content.slice(0, 120))} matching ${JSON.stringify(pattern)}`)
+    }
+  }
+  for (const exact of excludesExact ?? []) {
+    if (records.some(record => record.content === exact)) {
+      return fail(`${where} still holds the retired record ${JSON.stringify(exact)}`)
     }
   }
   return pass()
+}
+
+/**
+ * Check the summary the model wrote for one scope.
+ * @param options - harness home, scope, project, required/forbidden text, byte cap.
+ * @returns the check result.
+ */
+function checkSummary({ home, scope, project, projectId, contains, excludes, maxBytes }) {
+  const layout = scope === 'user' ? userLayout(join(home, 'memory')) : projectLayout(join(home, 'memory'), projectId(project))
+  if (!existsSync(layout.summaryPath)) return fail('summary.md was not generated')
+  const file = readFileSync(layout.summaryPath, 'utf8')
+  const body = file.replace(/^---\n[\s\S]*?\n---\n/u, '').trim()
+  if (body === '') return fail('summary.md is empty')
+  const where = `summary ${scope}${project === undefined ? '' : `/${project}`}`
+  for (const needle of contains ?? []) {
+    if (!body.toLowerCase().includes(needle.toLowerCase())) return fail(`${where} does not mention ${JSON.stringify(needle)}: ${JSON.stringify(body.slice(0, 200))}`)
+  }
+  for (const pattern of excludes ?? []) {
+    if (new RegExp(pattern, 'iu').test(body)) return fail(`${where} mentions ${JSON.stringify(pattern)}: ${JSON.stringify(body.slice(0, 200))}`)
+  }
+  const budget = maxBytes ?? 1200
+  if (Buffer.byteLength(body, 'utf8') > budget) return fail(`${where} is ${String(Buffer.byteLength(body, 'utf8'))} bytes, over ${String(budget)}`)
+  return pass()
+}
+
+/**
+ * Sum the usage one session reported.
+ * @param logPath - the spy's log.
+ * @param sessionId - the session to sum, or undefined for every line.
+ * @returns input and output tokens, and how many records contributed.
+ */
+function readUsage(logPath, sessionId) {
+  if (!existsSync(logPath)) return { inputTokens: 0, outputTokens: 0, records: 0 }
+  let inputTokens = 0
+  let outputTokens = 0
+  let records = 0
+  for (const line of readFileSync(logPath, 'utf8').split('\n').filter(Boolean)) {
+    let entry
+    try { entry = JSON.parse(line) } catch { continue }
+    if (sessionId !== undefined && entry.sessionId !== sessionId) continue
+    if (typeof entry.inputTokens !== 'number' || typeof entry.outputTokens !== 'number') continue
+    inputTokens += entry.inputTokens
+    outputTokens += entry.outputTokens
+    records += 1
+  }
+  return { inputTokens, outputTokens, records }
 }
 
 /**
@@ -258,7 +345,10 @@ async function runScenario(scenario, index) {
     const bound = await bindProject({ ...registryLayout(join(home, 'memory')), lockTimeoutMs: 10_000, staleLockMs: 60_000, projectRootMarkers: ['.git'] }, projectDir)
     projectIds.set(name, bound.project.project_id)
   }
+  const usageLog = join(dir, 'usage.jsonl')
   const steps = []
+  const sessionDurations = []
+  const tokens = { inputTokens: 0, outputTokens: 0 }
   const started = Date.now()
   for (const [stepIndex, step] of scenario.steps.entries()) {
     const label = `${String(stepIndex + 1)}.${Object.keys(step).join('+')}`
@@ -272,10 +362,25 @@ async function runScenario(scenario, index) {
       } else if (step.assertStore !== undefined) {
         const result = checkStore({ home, ...step.assertStore, projectId: name => projectIds.get(name) })
         steps.push({ label, ...result })
+      } else if (step.assertSummary !== undefined) {
+        const result = checkSummary({ home, ...step.assertSummary, projectId: name => projectIds.get(name) })
+        steps.push({ label, ...result })
       } else if (step.session !== undefined) {
         const projectDir = projectDirs.get(step.session.project)
         if (projectDir === undefined) throw new Error(`eval: ${scenario.name} names an unknown project ${step.session.project}`)
-        const session = await runSession({ task: step.session.task, projectDir, home, model: MOCK ? MOCK_MODEL : DATA.model, dir })
+        const sessionStarted = Date.now()
+        const session = await runSession({
+          task: step.session.task,
+          projectDir,
+          home,
+          model: MOCK ? MOCK_MODEL : DATA.model,
+          dir,
+          drive: step.drive === true,
+          usageLog,
+        })
+        sessionDurations.push(Date.now() - sessionStarted)
+        tokens.inputTokens += session.usage.inputTokens
+        tokens.outputTokens += session.usage.outputTokens
         if (session.failure !== undefined) {
           steps.push({ label, ...fail(session.failure) })
         } else if (session.code !== 0) {
@@ -293,7 +398,15 @@ async function runScenario(scenario, index) {
       steps.push({ label, ...fail(error instanceof Error ? error.message : String(error)) })
     }
   }
-  return { name: scenario.name, pass: steps.every(step => step.pass), durationMs: Date.now() - started, steps }
+  return {
+    name: scenario.name,
+    pass: steps.every(step => step.pass),
+    durationMs: Date.now() - started,
+    tokens,
+    sessions: sessionDurations.length,
+    sessionDurations,
+    steps,
+  }
 }
 
 preflight()
@@ -306,7 +419,8 @@ if (CONFIG_ONLY) {
 
 const ROOT = mkdtempSync(join(tmpdir(), 'dsh-reflection-eval-'))
 const scenarios = []
-for (const [index, scenario] of DATA.scenarios.entries()) {
+const selected = ONLY === undefined ? DATA.scenarios : DATA.scenarios.filter(scenario => scenario.name.includes(ONLY))
+for (const [index, scenario] of selected.entries()) {
   process.stdout.write(`\n=== ${scenario.name} ===\n`)
   const result = await runScenario(scenario, index)
   scenarios.push(result)
@@ -314,22 +428,34 @@ for (const [index, scenario] of DATA.scenarios.entries()) {
     console.log(`  ${step.pass ? 'ok  ' : 'FAIL'} ${step.label}${step.detail === undefined ? '' : ` — ${step.detail}`}`)
     if (step.answer !== undefined && !step.pass) console.log(`       answer: ${step.answer.slice(0, 300)}`)
   }
-  console.log(`  ${result.pass ? 'PASS' : 'FAIL'} ${scenario.name} (${String(result.durationMs)} ms)`)
+  console.log(`  ${result.pass ? 'PASS' : 'FAIL'} ${scenario.name} (${String(result.durationMs)} ms, ${String(result.tokens.inputTokens)} in / ${String(result.tokens.outputTokens)} out)`)
 }
-rmSync(ROOT, { recursive: true, force: true })
+if (KEEP) console.log(`scratch kept at ${ROOT}`)
+else rmSync(ROOT, { recursive: true, force: true })
 
 const passed = scenarios.filter(scenario => scenario.pass).length
+const durations = scenarios.flatMap(scenario => scenario.sessionDurations).sort((left, right) => left - right)
+const p50 = durations.length === 0 ? 0 : durations[Math.floor(durations.length / 2)]
+const metrics = {
+  inputTokens: scenarios.reduce((sum, scenario) => sum + scenario.tokens.inputTokens, 0),
+  outputTokens: scenarios.reduce((sum, scenario) => sum + scenario.tokens.outputTokens, 0),
+  sessions: durations.length,
+  p50SessionMs: p50,
+}
 const report = {
   version: 1,
   model: MOCK ? MOCK_MODEL : DATA.model,
   dataset: DATA.version,
   scenarios,
+  metrics,
   passRate: passed / scenarios.length,
   passed,
   total: scenarios.length,
 }
 writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`)
 console.log(`\n${String(passed)}/${String(scenarios.length)} scenarios passed`)
+console.log(`tokens: ${String(metrics.inputTokens)} in / ${String(metrics.outputTokens)} out over ${String(metrics.sessions)} sessions; p50 session ${String(metrics.p50SessionMs)} ms`)
+console.log('note: usage covers agent turns and consolidation audits; summary-refresh calls are not attributed to a session event')
 
 const baseline = existsSync(BASELINE_PATH) ? JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) : undefined
 if (UPDATE_BASELINE) {
@@ -337,7 +463,7 @@ if (UPDATE_BASELINE) {
   writeFileSync(BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`)
   console.log(`baseline updated: ${BASELINE_PATH}`)
 }
-if (!UPDATE_BASELINE && Array.isArray(baseline?.behavior?.passed)) {
+if (!UPDATE_BASELINE && ONLY === undefined && Array.isArray(baseline?.behavior?.passed)) {
   const regressed = baseline.behavior.passed.filter(name => !scenarios.find(scenario => scenario.name === name)?.pass)
   if (regressed.length > 0) {
     console.error(`\nbehavior regressed: ${regressed.join(', ')}`)

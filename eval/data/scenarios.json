@@ -1,60 +1,403 @@
 {
-  "version": 1,
-  "model": { "provider": "deepseek-official", "model": "deepseek-flash", "reasoningEffort": "high" },
+  "version": 3,
+  "model": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "reasoningEffort": "high"
+  },
   "scenarios": [
     {
       "name": "write-then-read",
-      "projects": ["alpha"],
+      "projects": [
+        "alpha"
+      ],
       "steps": [
-        { "session": { "project": "alpha", "task": "记住：这个项目用 pnpm 管理依赖，构建命令是 pnpm build。" } },
-        { "assertStore": { "scope": "project", "project": "alpha", "contains": ["pnpm"] } },
-        { "session": { "project": "alpha", "task": "这个项目用什么包管理器？只回答一句话。" }, "expect": { "all": ["pnpm"] } }
+        {
+          "session": {
+            "project": "alpha",
+            "task": "记住：这个项目用 pnpm 管理依赖，构建命令是 pnpm build。"
+          }
+        },
+        {
+          "assertStore": {
+            "scope": "project",
+            "project": "alpha",
+            "contains": [
+              "pnpm"
+            ]
+          }
+        },
+        {
+          "session": {
+            "project": "alpha",
+            "task": "这个项目用什么包管理器？只回答一句话。"
+          },
+          "expect": {
+            "all": [
+              "pnpm"
+            ]
+          }
+        }
       ]
     },
     {
       "name": "user-cross-project",
-      "projects": ["alpha", "beta"],
+      "projects": [
+        "alpha",
+        "beta"
+      ],
       "steps": [
-        { "session": { "project": "alpha", "task": "记住：我偏好中文回答，技术术语保留英文。" } },
-        { "assertStore": { "scope": "user", "contains": ["中文"] } },
-        { "session": { "project": "beta", "task": "用户偏好用什么语言回答？只回答一句话。" }, "expect": { "all": ["中文"] } }
+        {
+          "session": {
+            "project": "alpha",
+            "task": "记住：我偏好中文回答，技术术语保留英文。"
+          }
+        },
+        {
+          "assertStore": {
+            "scope": "user",
+            "contains": [
+              "中文"
+            ]
+          }
+        },
+        {
+          "session": {
+            "project": "beta",
+            "task": "用户偏好用什么语言回答？只回答一句话。"
+          },
+          "expect": {
+            "all": [
+              "中文"
+            ]
+          }
+        }
       ]
     },
     {
       "name": "project-isolation",
-      "projects": ["alpha", "beta"],
+      "projects": [
+        "alpha",
+        "beta"
+      ],
       "steps": [
-        { "seed": { "scope": "project", "project": "alpha", "records": [{ "category": "state", "content": "这个项目用 pnpm 管理依赖。" }] } },
-        { "session": { "project": "beta", "task": "这个项目用什么包管理器？如果记忆里没有明确记录，就只回答「不知道」。" },
-          "expect": { "abstain": true, "none": ["\\bpnpm\\b", "\\bnpm\\b"] } }
+        {
+          "seed": {
+            "scope": "project",
+            "project": "alpha",
+            "records": [
+              {
+                "category": "state",
+                "content": "这个项目用 pnpm 管理依赖。"
+              }
+            ]
+          }
+        },
+        {
+          "session": {
+            "project": "beta",
+            "task": "这个项目用什么包管理器？如果记忆里没有明确记录，就只回答「不知道」。"
+          },
+          "expect": {
+            "abstain": true,
+            "none": [
+              "\\bpnpm\\b",
+              "\\bnpm\\b"
+            ]
+          }
+        }
       ]
     },
     {
       "name": "superseded-not-served",
-      "projects": ["alpha"],
+      "projects": [
+        "alpha"
+      ],
       "steps": [
-        { "seed": { "scope": "project", "project": "alpha", "records": [{ "category": "state", "content": "这个项目用 npm 管理依赖。" }] } },
-        { "supersede": { "scope": "project", "project": "alpha", "from": "这个项目用 npm 管理依赖。", "to": "这个项目用 pnpm 管理依赖。" } },
-        { "session": { "project": "alpha", "task": "这个项目用什么包管理器？只回答一句话。" },
-          "expect": { "all": ["pnpm"], "none": ["\\bnpm\\b"] } }
+        {
+          "seed": {
+            "scope": "project",
+            "project": "alpha",
+            "records": [
+              {
+                "category": "state",
+                "content": "这个项目用 npm 管理依赖。"
+              }
+            ]
+          }
+        },
+        {
+          "supersede": {
+            "scope": "project",
+            "project": "alpha",
+            "from": "这个项目用 npm 管理依赖。",
+            "to": "这个项目用 pnpm 管理依赖。"
+          }
+        },
+        {
+          "session": {
+            "project": "alpha",
+            "task": "这个项目用什么包管理器？只回答一句话。"
+          },
+          "expect": {
+            "all": [
+              "pnpm"
+            ],
+            "none": [
+              "\\bnpm\\b"
+            ]
+          }
+        }
       ]
     },
     {
       "name": "detail-lookup",
-      "projects": ["alpha"],
+      "projects": [
+        "alpha"
+      ],
       "steps": [
-        { "seed": { "scope": "project", "project": "alpha", "records": [
-          { "category": "state", "content": "alpha 的发布分支是 release/2026-11。" },
-          { "category": "state", "content": "alpha 的构建产物在 dist/。" },
-          { "category": "state", "content": "alpha 用 vitest 跑单元测试。" },
-          { "category": "decision", "content": "alpha 的日志字段是 ts、level、msg。" },
-          { "category": "state", "content": "alpha 的配置从 config/default.json 读取。" },
-          { "category": "state", "content": "alpha 的部署脚本是 scripts/deploy.sh。" },
-          { "category": "state", "content": "alpha 的 token 有效期是 30 分钟。" },
-          { "category": "state", "content": "alpha 的缓存是 Redis。" }
-        ] } },
-        { "session": { "project": "alpha", "task": "alpha 的发布分支叫什么？只回答分支名。" },
-          "expect": { "all": ["release/2026-11"] } }
+        {
+          "seed": {
+            "scope": "project",
+            "project": "alpha",
+            "records": [
+              {
+                "category": "state",
+                "content": "alpha 的发布分支是 release/2026-11。"
+              },
+              {
+                "category": "state",
+                "content": "alpha 的构建产物在 dist/。"
+              },
+              {
+                "category": "state",
+                "content": "alpha 用 vitest 跑单元测试。"
+              },
+              {
+                "category": "decision",
+                "content": "alpha 的日志字段是 ts、level、msg。"
+              },
+              {
+                "category": "state",
+                "content": "alpha 的配置从 config/default.json 读取。"
+              },
+              {
+                "category": "state",
+                "content": "alpha 的部署脚本是 scripts/deploy.sh。"
+              },
+              {
+                "category": "state",
+                "content": "alpha 的 token 有效期是 30 分钟。"
+              },
+              {
+                "category": "state",
+                "content": "alpha 的缓存是 Redis。"
+              }
+            ]
+          }
+        },
+        {
+          "session": {
+            "project": "alpha",
+            "task": "alpha 的发布分支叫什么？只回答分支名。"
+          },
+          "expect": {
+            "all": [
+              "release/2026-11"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "consolidation-write",
+      "projects": [
+        "alpha"
+      ],
+      "steps": [
+        {
+          "session": {
+            "project": "alpha",
+            "task": "我们决定这个项目统一改用 pnpm 管理依赖。另外，我今天喝了咖啡。"
+          },
+          "drive": true
+        },
+        {
+          "assertStore": {
+            "scope": "project",
+            "project": "alpha",
+            "contains": [
+              "pnpm"
+            ],
+            "excludes": [
+              "咖啡",
+              "sk-eval"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "summary-fidelity",
+      "projects": [
+        "alpha"
+      ],
+      "steps": [
+        {
+          "seed": {
+            "scope": "project",
+            "project": "alpha",
+            "records": [
+              {
+                "category": "state",
+                "content": "alpha 用 pnpm 管理依赖，构建命令是 pnpm build。"
+              },
+              {
+                "category": "state",
+                "content": "alpha 的发布分支是 release/2026-11。"
+              },
+              {
+                "category": "state",
+                "content": "alpha 用 vitest 跑单元测试。"
+              },
+              {
+                "category": "state",
+                "content": "alpha 的配置从 config/default.json 读取。"
+              },
+              {
+                "category": "decision",
+                "content": "alpha 的日志字段是 ts、level、msg。"
+              },
+              {
+                "category": "state",
+                "content": "alpha 的缓存是 Redis。"
+              }
+            ]
+          }
+        },
+        {
+          "session": {
+            "project": "alpha",
+            "task": "这个项目大概有哪些约定？一句话概括就行。"
+          }
+        },
+        {
+          "assertSummary": {
+            "scope": "project",
+            "project": "alpha",
+            "contains": [
+              "pnpm"
+            ],
+            "excludes": [
+              "zeta-canary"
+            ],
+            "maxBytes": 1200
+          }
+        }
+      ]
+    },
+    {
+      "name": "update-write",
+      "projects": [
+        "alpha"
+      ],
+      "steps": [
+        {
+          "session": {
+            "project": "alpha",
+            "task": "记住：这个项目用 npm 管理依赖。"
+          }
+        },
+        {
+          "assertStore": {
+            "scope": "project",
+            "project": "alpha",
+            "contains": [
+              "npm"
+            ]
+          }
+        },
+        {
+          "session": {
+            "project": "alpha",
+            "task": "现在改用 pnpm 了。把这条记忆更新成 pnpm，不要留下旧的 npm 那条。"
+          }
+        },
+        {
+          "assertStore": {
+            "scope": "project",
+            "project": "alpha",
+            "contains": [
+              "pnpm"
+            ],
+            "excludesExact": [
+              "这个项目用 npm 管理依赖。"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "secret-screening",
+      "projects": [
+        "alpha"
+      ],
+      "steps": [
+        {
+          "session": {
+            "project": "alpha",
+            "task": "记住：我的 API key 是 sk-eval-0123456789abcdef，以后调用接口都用它。"
+          }
+        },
+        {
+          "assertStore": {
+            "scope": "user",
+            "excludes": [
+              "sk-eval"
+            ]
+          }
+        },
+        {
+          "assertStore": {
+            "scope": "project",
+            "project": "alpha",
+            "excludes": [
+              "sk-eval"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "consolidation-secret",
+      "projects": [
+        "alpha"
+      ],
+      "steps": [
+        {
+          "session": {
+            "project": "alpha",
+            "task": "记一下：我的 API key 是 sk-eval-0123456789abcdef。"
+          },
+          "drive": true
+        },
+        {
+          "assertStore": {
+            "scope": "user",
+            "excludes": [
+              "sk-eval"
+            ]
+          }
+        },
+        {
+          "assertStore": {
+            "scope": "project",
+            "project": "alpha",
+            "excludes": [
+              "sk-eval"
+            ]
+          }
+        }
       ]
     }
   ]

@@ -37,7 +37,7 @@ with the plugin mounted from this checkout and a real model. Each scenario gets
 a fresh `DSH_HOME` and its own project directories, so runs cannot leak into
 each other or into your real Memory.
 
-The five V1 scenarios:
+The ten scenarios:
 
 | Scenario | What it proves |
 |---|---|
@@ -46,6 +46,13 @@ The five V1 scenarios:
 | `project-isolation` | a project does not see another project's Memory, and says so |
 | `superseded-not-served` | a retired record is replaced by its successor, not served alongside it |
 | `detail-lookup` | a fact outside the injected summary is still found |
+| `consolidation-write` | automatic learning stores the durable decision and drops the small talk |
+| `consolidation-secret` | automatic learning never stores a credential |
+| `summary-fidelity` | the model-written summary names what matters, invents nothing, and fits its budget |
+| `update-write` | a later instruction updates the existing record instead of leaving the old one active |
+| `secret-screening` | an explicit write of a credential is refused |
+
+`consolidation-write` drives `/memory consolidate` through the shipped driver fixture, because the plugin's own debounce cannot fire inside a one-shot run.
 
 Scoring is rule-based, not judged: `all` (every string must appear), `none`
 (regexes that must not), `abstain` (the answer must decline). That keeps V1
@@ -53,9 +60,24 @@ cheap and reproducible; an LLM judge is a later layer, not a prerequisite.
 
 ```sh
 DEEPSEEK_API_KEY=… npm run eval:behavior
-npm run eval:check              # config only: CLI path, scenarios, model route
-npm run eval:behavior -- --mock # keyless plumbing check; expectations fail by design
+npm run eval:check                      # config only: CLI path, scenarios, model route
+npm run eval:behavior -- --only update  # one scenario, by name fragment
+npm run eval:behavior -- --keep         # keep the scratch tree for inspection
+npm run eval:behavior -- --mock         # keyless plumbing check; expectations fail by design
 ```
+
+The report carries the run's cost beside its result: input/output tokens and the
+p50 session latency. Tokens come from a spy fixture (`eval/fixtures/usage-spy.ts`)
+reading committed `assistant/message` usage and the consolidator's audit, so
+**summary-refresh calls are not counted** — they are model calls this plugin makes
+outside the agent's turn. Treat the number as a floor, not the whole bill.
+
+One behaviour the suite pinned down: secret screening is **turn-granular**. The
+plugin screens the complete human message the evidence cites, so one credential in
+a turn blocks every fact that turn could have contributed. That is why
+`consolidation-write` and `consolidation-secret` are separate scenarios; it is a
+deliberate, documented trade (see the contract's secret section), not a bug the
+suite should paper over.
 
 The model is pinned in `data/scenarios.json`:
 `deepseek-official / deepseek-flash / reasoningEffort: high`. Change it there,
@@ -77,6 +99,8 @@ DEEPSEEK_API_KEY=… npm run eval:behavior -- --update-baseline
 - L1 fails when a metric falls more than 0.03 below the baseline.
 - L2 fails when a scenario that the baseline records as passing now fails.
 - Improvements never fail a run; they are recorded by updating the baseline.
+- `--only` skips the baseline comparison, so a single-scenario run is not
+  reported as a regression of the others.
 
 CI never updates the baseline. A run on a tag is a datapoint; moving the bar is
 a review decision.
@@ -103,11 +127,12 @@ a review decision.
 
 ## Known limits (V1)
 
-- Five scenarios is a smoke layer, not a benchmark; it detects breakage, not
+- Ten scenarios is a smoke layer, not a benchmark; it detects breakage, not
   small quality movements.
 - Rule-based scoring misses answers that are correct but phrased without the
   expected token. A judge is the next step, once the harness is trusted.
 - No external benchmark (LongMemEval/LoCoMo) is wired in. Deliberate: they test
   chat-persona memory, not a coding agent's project Memory.
-- Consolidation quality, summary fidelity, and secret screening are not scored
-  end to end yet.
+- Token accounting misses summary-refresh calls (see above).
+- No judge: answers must contain the expected token. A correct answer phrased
+  without it (or a wrong answer repeating it) is mis-scored.
