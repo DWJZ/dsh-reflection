@@ -60,6 +60,8 @@ export interface CachedSummary {
   generated_at: string
   /** Provider and model that wrote it, when known. */
   model?: string | undefined
+  /** Injection budget it was written for; a different budget makes it stale. */
+  budget?: number | undefined
 }
 
 /**
@@ -74,6 +76,7 @@ export function renderSummaryDocument(entry: CachedSummary) {
     `generated_at: ${entry.generated_at}`,
   ]
   if (entry.model !== undefined) lines.push(`model: ${entry.model}`)
+  if (entry.budget !== undefined) lines.push(`budget: ${String(entry.budget)}`)
   lines.push('---', '', entry.text.trim(), '')
   return lines.join('\n')
 }
@@ -98,11 +101,13 @@ export function parseSummaryDocument(text: string): CachedSummary | undefined {
   if (!Number.isInteger(revision) || revision < 0) return undefined
   const body = text.slice(end + 4).trim()
   if (body === '') return undefined
+  const budget = Number(fields.budget)
   return {
     text: body,
     revision,
     generated_at: fields.generated_at ?? '',
     ...fields.model === undefined ? {} : { model: fields.model },
+    ...Number.isInteger(budget) && budget > 0 ? { budget } : {},
   }
 }
 
@@ -142,12 +147,14 @@ export function writeSummaryDocument(path: string, entry: CachedSummary): void {
  * @param input.records - every record in the scope, including inactive ones.
  * @param input.scopeLabel - `user` or `project`, named in the prompt.
  * @param input.projectPath - the project root, when the scope is a project.
+ * @param input.budgetBytes - the injection budget the summary must fit.
  * @returns the user message.
  */
 export function buildSummaryPrompt(input: {
   records: readonly MemoryRecord[]
   scopeLabel: string
   projectPath?: string | undefined
+  budgetBytes: number
 }): string {
   const active = input.records
     .filter((record: MemoryRecord) => record.status === 'active')
@@ -156,7 +163,13 @@ export function buildSummaryPrompt(input: {
   const header = input.projectPath === undefined
     ? `Scope: ${input.scopeLabel}. ${String(active.length)} active records.`
     : `Scope: ${input.scopeLabel} (${input.projectPath}). ${String(active.length)} active records.`
-  const lines = [header, '', 'Newest records first:']
+  const lines = [
+    header,
+    '',
+    `Keep the whole summary within ${String(input.budgetBytes)} UTF-8 bytes (about ${String(Math.floor(input.budgetBytes / 3))} Chinese characters); anything past that is cut before the agent sees it.`,
+    '',
+    'Newest records first:',
+  ]
   let bytes = Buffer.byteLength(lines.join('\n'), 'utf8')
   for (const record of active) {
     const text = record.content.length > RECORD_CHARS_IN_PROMPT

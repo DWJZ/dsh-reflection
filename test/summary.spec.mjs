@@ -105,13 +105,15 @@ const prompt = buildSummaryPrompt({
     record({ id: 'mem_gone', content: '已归档', status: 'archived' }),
   ],
   scopeLabel: 'user',
+  budgetBytes: 1200,
 })
 check('it names the scope', prompt.includes('Scope: user'))
+check('it carries the injection budget', prompt.includes('1200'))
 check('it counts active records only', prompt.includes('2 active records'))
 check('the newest record comes first', prompt.indexOf('新事实') < prompt.indexOf('旧事实'))
 check('inactive records are absent', !prompt.includes('已归档'))
 check('a long record is truncated', (() => {
-  const longPrompt = buildSummaryPrompt({ records: [record({ content: 'x'.repeat(1000) })], scopeLabel: 'user' })
+  const longPrompt = buildSummaryPrompt({ records: [record({ content: 'x'.repeat(1000) })], scopeLabel: 'user', budgetBytes: 2400 })
   return longPrompt.includes('…') && Buffer.byteLength(longPrompt, 'utf8') < 1000
 })())
 
@@ -119,6 +121,7 @@ console.log('titles lead the summary prompt')
 const titled = buildSummaryPrompt({
   records: [record({ title: '构建命令', content: 'pnpm run build:edge' })],
   scopeLabel: 'user',
+  budgetBytes: 1200,
 })
 check('the title appears before the body', titled.includes('构建命令') && titled.indexOf('构建命令') < titled.indexOf('pnpm run build:edge'))
 

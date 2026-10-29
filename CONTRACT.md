@@ -91,7 +91,7 @@ Memory 的物理位置不可配置：内部恒为 `path.join(resolvedDshHome, 'm
 | `enabled` | boolean | `true` | — （当前值由 §17 的 `config.json` 覆盖） |
 | `sessionEvents` | boolean | `false` | — （本插件写 Session 轨迹行的**唯一**开关） |
 | `dshHome` | string | `$DSH_HOME` / `~/.dsh` | 非空 |
-| `summaryBudgetBytes` | number | `1200` | `>= 0`（注入摘要的 UTF-8 字节上限） |
+| `summaryBudgetBytes` | number | `2400` | `>= 0`（注入摘要的 UTF-8 字节上限；摘要调用会被告知这个数字） |
 | `retrievalTopK` | number | `8` | `>= 1` |
 | `projectRootMarkers` | string[] | `['.git']` | 非空字符串项。**必须与 `@deepseek-ai/dsh-agent-instructions` 的 `projectRootMarkers` 一致** —— harness 用它决定项目根（指令文件的范围），Memory 用它决定项目身份。本地插件无法读取对方的已解析配置，所以两者靠"同名字段 + 同默认值 + 一起改"保持同步 |
 | `lockTimeoutMs` | number | `10000` | `> 0` |
@@ -665,7 +665,7 @@ the index lists every record by title and id; each record has its own file under
 规则：
 
 - **不注入任何一条记录的正文。** envelope 只含：固定 notice、两个 scope 的 active 计数、类别计数、最后更新时间、两个 `memories.json` 的绝对路径，以及指向 `memories/<id>.md` 的说明。
-- **摘要由模型写。** store revision 变化后（显式写入等待刷新；consolidation 之后由下一次读取触发），用该 Session 自己的 route 生成，写进该 scope 的 `summary.md`（frontmatter 带 `revision` / `generated_at` / `model`）。注入**只读缓存**，同步路径上不调用模型。摘要调用不设插件侧输出上限，沿用 provider 自己的上限；失败第一次记 `warn`，后续重试降到 `debug`，避免坏 route 刷屏。
+- **摘要由模型写。** store revision 变化后（显式写入等待刷新；consolidation 之后由下一次读取触发），用该 Session 自己的 route 生成，写进该 scope 的 `summary.md`（frontmatter 带 `revision` / `generated_at` / `model` / `budget`）。注入**只读缓存**，同步路径上不调用模型。摘要调用不设插件侧输出上限，沿用 provider 自己的上限；提示词带上 `summaryBudgetBytes` 并说明超出会被截断。缓存的 `budget` 与当前配置不一致时视为过期：下一次读取重新生成。失败第一次记 `warn`，后续重试降到 `debug`，避免坏 route 刷屏。
 - 缓存描述的 revision 落后时仍然注入 —— 过时的摘要优于没有摘要 —— 由后台刷新追上。
 - **固定部分永不为了腾地方而裁掉**：超 `summaryBudgetBytes` 时先裁模型写的那段（按 UTF-8 字节切，不劈开字符，末尾补 `…`）。连固定部分都放不下时整个 envelope 为 `''`。
 - 两个 scope 都没有 active 记录时不注入。

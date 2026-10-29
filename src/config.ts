@@ -21,7 +21,7 @@ import { hostname } from 'node:os'
 export const DEFAULTS = Object.freeze({
   enabled: true,
   dshHome: '',
-  summaryBudgetBytes: 1200,
+  summaryBudgetBytes: 2400,
   retrievalTopK: 8,
   // The same list `@deepseek-ai/dsh-agent-instructions` resolves a project root
   // with. A local plugin cannot read that resolved config, so the two are kept in

@@ -29,6 +29,8 @@ export interface SummaryServiceOptions {
   llmScope(): Context | undefined
   /** Diagnostic sink. */
   logger?: { warn(message: string | Error): void; debug?(message: string): void } | undefined
+  /** Injection budget the summary is written for. */
+  summaryBudgetBytes: number
   /** Injectable clock, in epoch milliseconds. */
   now?(): number
 }
@@ -65,7 +67,8 @@ export function createSummaryService(options: SummaryServiceOptions) {
     const store = readStore(layout.storePath)
     if (!store.records.some((record: MemoryRecord) => record.status === 'active')) return
     const cached = readSummaryDocument(layout.summaryPath)
-    if (cached !== undefined && cached.revision === store.revision && cached.text.trim() !== '') return
+    if (cached !== undefined && cached.revision === store.revision && cached.text.trim() !== ''
+      && cached.budget === options.summaryBudgetBytes) return
     const session = agent?.session
     const sessionId = session?.id
     if (typeof sessionId !== 'string' || sessionId === '') return
@@ -77,6 +80,7 @@ export function createSummaryService(options: SummaryServiceOptions) {
         records: store.records,
         scopeLabel,
         ...projectPath === undefined ? {} : { projectPath },
+        budgetBytes: options.summaryBudgetBytes,
       }),
       label: 'summary',
     })
@@ -85,6 +89,7 @@ export function createSummaryService(options: SummaryServiceOptions) {
       revision: store.revision,
       generated_at: new Date((options.now ?? Date.now)()).toISOString(),
       model: `${answer.provider}/${answer.model}`,
+      budget: options.summaryBudgetBytes,
     })
   }
 

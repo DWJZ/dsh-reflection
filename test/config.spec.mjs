@@ -36,7 +36,7 @@ console.log('defaults')
 const base = resolveWith({})
 check('enabled defaults to true', base.enabled === true)
 check('the memory root is derived', base.memoryDir === join('/tmp/dsh-reflection-config-spec', 'memory'))
-check('the summary budget defaults to 1200 bytes', base.summaryBudgetBytes === 1200)
+check('the summary budget defaults to 2400 bytes', base.summaryBudgetBytes === 2400)
 check('retrievalTopK defaults to 8', base.retrievalTopK === 8)
 check('projectRootMarkers defaults to .git',
   base.projectRootMarkers.length === 1 && base.projectRootMarkers[0] === '.git')
@@ -90,7 +90,7 @@ raw.summaryBudgetBytes = 1
 check('a resolved marker list is a copy', once.projectRootMarkers.length === 1)
 check('a resolved number is a copy', once.summaryBudgetBytes === 1500)
 check('the module defaults are untouched',
-  DEFAULTS.summaryBudgetBytes === 1200 && DEFAULTS.projectRootMarkers.length === 1)
+  DEFAULTS.summaryBudgetBytes === 2400 && DEFAULTS.projectRootMarkers.length === 1)
 
 console.log('a budget too small to hold an entry is refused')
 check('a batch budget below the floor is rejected', await (async () => {

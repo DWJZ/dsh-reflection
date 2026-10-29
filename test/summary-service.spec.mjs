@@ -64,6 +64,7 @@ async function scene(chunks) {
       },
     }),
     logger: { warn: message => warnings.push(String(message)), debug: message => debugs.push(String(message)) },
+    summaryBudgetBytes: 2400,
     now: () => Date.parse('2026-10-29T00:00:00.000Z'),
   })
   return { root, layout, seen, warnings, debugs, service }
@@ -93,11 +94,47 @@ console.log('the call has no plugin-side cap and the answer is cached')
   ])
   await service.refresh(agent)
   check('the call carries no maxTokens', seen.length === 1 && seen[0].maxTokens === undefined, JSON.stringify(seen[0]?.maxTokens))
+  check('the prompt carries the budget', String(seen[0]?.messages?.[0]?.content?.[0]?.text ?? '').includes('2400'))
   check('the summary file exists', existsSync(layout.summaryPath))
   const text = readFileSync(layout.summaryPath, 'utf8')
   check('the model text is cached', text.includes('the summary'))
   check('the cached revision is recorded', text.includes('revision:'))
   check('no warning on success', warnings.length === 0, JSON.stringify(warnings))
+  rmSync(root, { recursive: true, force: true })
+}
+
+console.log('a different budget makes the cache stale')
+{
+  const root = mkdtempSync(join(tmpdir(), 'dsh-reflection-summary-budget-'))
+  const layout = userLayout(root)
+  await withStore({ storePath: layout.storePath, lockPath: layout.lockPath, recordsDir: layout.recordsDir, lockTimeoutMs: 2000, staleLockMs: 60000 }, current => ({
+    changed: true,
+    records: [...current.records, memoryRecord({ title: 'a title', content: 'a fact' })],
+  }))
+  const seen = []
+  const makeService = budget => createSummaryService({
+    scopes: { user: layout, project: () => layout },
+    projectFor: () => null,
+    llmScope: () => ({
+      llm: {
+        async *stream(options) {
+          seen.push(options)
+          yield { type: 'text-delta', index: 0, text: `summary for ${String(budget)}` }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        },
+      },
+    }),
+    logger: { warn: () => {}, debug: () => {} },
+    summaryBudgetBytes: budget,
+    now: () => Date.parse('2026-10-29T00:00:00.000Z'),
+  })
+  await makeService(2400).refresh(agent)
+  check('the first budget writes a summary', seen.length === 1 && readFileSync(layout.summaryPath, 'utf8').includes('summary for 2400'))
+  await makeService(2400).refresh(agent)
+  check('the same budget reuses the cache', seen.length === 1)
+  await makeService(3200).refresh(agent)
+  check('a new budget refreshes', seen.length === 2)
+  check('the new budget is cached', readFileSync(layout.summaryPath, 'utf8').includes('budget: 3200'))
   rmSync(root, { recursive: true, force: true })
 }
 

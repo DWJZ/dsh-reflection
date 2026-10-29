@@ -107,7 +107,7 @@ envelope 的固定部分 —— 计数、文件路径、指向单条文件的说
 | `enabled` | `true` | 初始状态；被 `config.json` 覆盖 |
 | `dshHome` | `$DSH_HOME`，否则 `~/.dsh` | harness home；Memory 永远在其下 |
 | `sessionEvents` | `false` | 本插件写进 Session 日志的**唯一**开关。harness 没有给插件提供 append Session event 的受支持接口，这里用的是「未知类型 + `ignorable` 标记」这条侧门，所以默认关，由部署主动开启 |
-| `summaryBudgetBytes` | `1200` | 注入摘要的 UTF-8 字节上限 |
+| `summaryBudgetBytes` | `2400` | 注入摘要的 UTF-8 字节上限；摘要调用会被告知这个数字，为不同预算写出的缓存会在下次读取时重新生成 |
 | `retrievalTopK` | `8` | `memory_search` 默认返回条数 |
 | `projectRootMarkers` | `['.git']` | 标记 project root 的文件名 |
 | `lockTimeoutMs` | `10000` | 等 store 锁的上限，超时即报错 |
