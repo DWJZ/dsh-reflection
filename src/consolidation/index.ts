@@ -35,6 +35,7 @@ import { advanceHwm, lastProcessedSeq, NO_PROGRESS, progressFor, readState, reco
 import { failureMessage } from '../errors.js'
 import type { ConsolidationRequest } from './model.js'
 import type { ObservedEvent } from '../types/trajectory.js'
+import { MAX_BACKFILL_EVENTS } from '../history.js'
 import type { HistoryReader } from '../history.js'
 import { createCollector } from './collector.js'
 import { appendPluginRecord } from '@deepseek-ai/dsh-session'
@@ -245,6 +246,27 @@ export function createConsolidation(options: ConsolidationOptions) {
   }
 
   /**
+   * Read a hole in chunks small enough for one history call.
+   * @param sessionId - the Session to read.
+   * @param fromSeq - first seq wanted, inclusive.
+   * @param toSeq - last seq wanted, inclusive.
+   * @returns every event, or undefined when any chunk cannot be read whole.
+   */
+  const readHole = async (sessionId: string, fromSeq: number, toSeq: number): Promise<ObservedEvent[] | undefined> => {
+    if (options.history === undefined) return undefined
+    const events: ObservedEvent[] = []
+    let cursor = fromSeq
+    while (cursor <= toSeq) {
+      const end = Math.min(cursor + MAX_BACKFILL_EVENTS - 1, toSeq)
+      const chunk = await options.history.read(sessionId, cursor, end)
+      if (chunk === undefined || chunk.length !== end - cursor + 1) return undefined
+      events.push(...chunk)
+      cursor = end + 1
+    }
+    return events
+  }
+
+  /**
    * Reconcile the stored mark with the first seq this process can offer.
    *
    * Returns the mark to start from. A gap is recorded when the buffer begins
@@ -262,8 +284,9 @@ export function createConsolidation(options: ConsolidationOptions) {
     if (first === undefined) return { afterSeq: mark === NO_PROGRESS ? undefined : mark }
     if (first <= mark + 1) return { afterSeq: mark }
     // The harness may still be able to read a range this process never saw, so
-    // ask before writing the hole down as a gap.
-    const backfilled = await options.history?.read(sessionId, mark + 1, first - 1)
+    // ask before writing the hole down as a gap. Read it in chunks: one read's
+    // cap must not turn a long backlog into a gap.
+    const backfilled = await readHole(sessionId, mark + 1, first - 1)
     if (backfilled !== undefined && backfilled.length > 0) {
       logger?.info?.(`dsh-reflection: backfilled seqs ${String(mark + 1)}..${String(first - 1)} of ${sessionId} from session history`)
       return { afterSeq: mark, backfilled }
@@ -377,42 +400,53 @@ export function createConsolidation(options: ConsolidationOptions) {
       recordAudit(session, { status: 'gap', ...gap, trigger: runOptions.trigger ?? 'direct' })
     }
     const observed = mergeEvents(backfilled ?? [], collector.eventsFor(sessionId))
-    const window = batchWindow(observed, {
-      afterSeq,
-      maxEvents: config.maxRelevantEventsPerBatch,
-      maxBytes: config.maxTrajectoryBytesPerBatch,
-    })
-    if (window.unsupported !== undefined) {
-      throw new Error(`dsh-reflection: consolidation cannot read ${String(window.unsupported.type)} events (seq ${String(window.unsupported.seq)})`)
+    let cursor = afterSeq
+    let batches = 0
+    let last: SettledAudit | undefined
+    const totals = {
+      fromSeq: cursor + 1,
+      relevant: 0,
+      ignored: 0,
+      operations: { add: 0, update: 0, supersede: 0, noop: 0, skipped: 0, failed: 0 },
+      rejected: 0,
+      usage: undefined as ConsolidationUsage | undefined,
     }
-    if (window.toSeq === undefined) return { status: 'nothing-pending' }
-    // Captured here: the guard's narrowing does not survive into the callbacks below.
-    const toSeq = window.toSeq
-    const auditBase = {
-      from_seq: afterSeq + 1,
-      to_seq: toSeq,
-      relevant_events: window.counts.relevant,
-      ignored_events: window.counts.ignored + window.counts.internal + window.counts.skipped,
-      trigger: runOptions.trigger ?? 'direct',
-    }
-
     /**
-     * Consume the window without asking a model.
+     * Add one call's usage to the run total.
+     * @param usage - the call's usage, when the provider reported it.
+     * @returns nothing.
+     */
+    const addUsage = (usage: ConsolidationUsage | undefined): void => {
+      if (usage === undefined) return
+      const previous = totals.usage
+      totals.usage = {
+        inputTokens: (previous?.inputTokens ?? 0) + usage.inputTokens,
+        outputTokens: (previous?.outputTokens ?? 0) + usage.outputTokens,
+        ...usage.totalTokens === undefined
+          ? previous?.totalTokens === undefined ? {} : { totalTokens: previous.totalTokens }
+          : { totalTokens: (previous?.totalTokens ?? 0) + usage.totalTokens },
+      }
+    }
+    /**
+     * Consume one window without asking a model.
+     * @param auditBase - the window's counts.
      * @param status - why nothing was asked.
      * @returns the outcome.
      */
-    const consume = async (status: SettledStatus) => {
+    const consume = async (
+      auditBase: { from_seq: number; to_seq: number; relevant_events: number; ignored_events: number },
+      status: SettledStatus,
+    ) => {
       await withState(stateOptions, current => ({
         changed: true,
-        state: advanceHwm(current, sessionId, toSeq, new Date(now()).toISOString()),
+        state: advanceHwm(current, sessionId, auditBase.to_seq, new Date(now()).toISOString()),
       }))
-      collector.dropConsumed(sessionId, toSeq)
+      collector.dropConsumed(sessionId, auditBase.to_seq)
       // A window with nothing relevant in it taught nothing, and writing an audit
       // for it would be self-defeating: an audit is appended to the Session, which
       // publishes it back to this collector, so auditing an empty window puts the
-      // audit itself in the next window. Repeating the command would then trade one
-      // audit for the next and never reach "nothing new".
-      if (window.counts.relevant === 0) {
+      // audit itself in the next window.
+      if (auditBase.relevant_events === 0) {
         logger?.debug?.(`dsh-reflection: consolidation of ${sessionId} consumed seqs ${String(auditBase.from_seq)}..${String(auditBase.to_seq)} without asking anything (${status})`)
         return { ...auditBase, status }
       }
@@ -420,112 +454,165 @@ export function createConsolidation(options: ConsolidationOptions) {
       return { ...auditBase, status }
     }
 
-    if (!window.humanTurn) return consume('no-human-turn')
-
-    const projectId = options.projectFor(agent)?.project_id ?? null
-    const existing = activeMemory(projectId)
-    const answer = await callModel({
-      session,
-      sessionId,
-      fromSeq: afterSeq + 1,
-      toSeq: toSeq,
-      entries: window.entries,
-      existing: existing.map(record => ({
-        id: record.id,
-        scope: record.scope,
-        category: record.category,
-        content: record.content,
-      })),
-      signal: runOptions.signal,
-    })
-    const text = answer.text
-    // The usage belongs to the call, not the window, so it rides along with the
-    // window fields every audit construction already spreads.
-    const extras = auditBase as { usage?: ConsolidationUsage | undefined; model_raw?: string }
-    extras.usage = answer.usage
-    // The raw answer can quote the conversation, so it is kept only when a person
-    // asks for it with a dry run.
-    if (runOptions.dryRun === true && runOptions.showRaw === true) extras.model_raw = answer.text
-    const plan = parsePlan(text)
-    const reviewed = reviewPlan(plan, {
-      fromSeq: afterSeq + 1,
-      toSeq: toSeq,
-      visibleSeqs: new Set(window.entries.map(entry => entry.seq)),
-      eventsBySeq: new Map(observed.map((event: ObservedEvent) => [event.seq, event])),
-      existing,
-      projectId,
-      sessionId,
-      minConfidence: config.minConfidence,
-      quoteMaxChars: config.quoteMaxChars,
-      maxEvidencePerMemory: config.maxEvidencePerMemory,
-      now,
-    })
-
-    if (runOptions.dryRun === true) {
-      return {
-        ...auditBase,
-        status: 'dry-run',
-        accepted: reviewed.accepted.map(operation => ({
-          action: operation.action,
-          scope: operation.scope,
-          category: operation.category,
-          content: operation.content,
-          confidence: operation.confidence,
-          // Only an update or a supersede names a record; `add` has none.
-          target_id: operation.action === 'add' ? undefined : operation.target_id,
-          evidence_event_seqs: operation.evidence.event_seqs,
-          quote: operation.evidence.quote,
-        })),
-        rejected: reviewed.rejected,
-        noopReasons: reviewed.noopReasons,
-      }
-    }
-
-    const rejectedCount = reviewed.rejected.length
-    const rejected = countRejections(reviewed.rejected)
-    const operations = {
-      add: 0,
-      update: 0,
-      supersede: 0,
-      noop: reviewed.noopReasons.length,
-      skipped: 0,
-      failed: 0,
-    }
-
-    const outcome = await commitOperations(options.actionOptions, reviewed.accepted)
-
-    if (outcome.failures.length > 0) {
-      // Something a review accepted could not be written. The mark stays put, so
-      // the window is retried and the plan is formed again against current state.
-      logger?.warn?.(`dsh-reflection: consolidation left ${String(outcome.failures.length)} operation(s) unwritten for ${sessionId}`)
-      // Everything a plan contained is accounted for: written + duplicate-or-
-      // conflict + failed + no-op adds up to what the review accepted plus what
-      // it proposed nothing for.
-      recordAudit(session, {
-        ...auditBase,
-        status: 'partial',
-        operations: {
-          ...operations,
-          ...outcome.committed,
-          skipped: outcome.skipped.length,
-          failed: outcome.failures.length,
-        },
-        rejected: rejectedCount,
-        ...rejected,
+    while (batches < config.maxBatchesPerRun) {
+      const window = batchWindow(observed, {
+        afterSeq: cursor,
+        maxEvents: config.maxRelevantEventsPerBatch,
+        maxBytes: config.maxTrajectoryBytesPerBatch,
       })
-      return { ...auditBase, status: 'partial', committed: outcome.committed, failures: outcome.failures.length }
+      if (window.unsupported !== undefined) {
+        throw new Error(`dsh-reflection: consolidation cannot read ${String(window.unsupported.type)} events (seq ${String(window.unsupported.seq)})`)
+      }
+      if (window.toSeq === undefined) break
+      const toSeq = window.toSeq
+      const auditBase = {
+        from_seq: cursor + 1,
+        to_seq: toSeq,
+        relevant_events: window.counts.relevant,
+        ignored_events: window.counts.ignored + window.counts.internal + window.counts.skipped,
+        trigger: runOptions.trigger ?? 'direct',
+      }
+      if (!window.humanTurn) {
+        last = await consume(auditBase, 'no-human-turn')
+        totals.relevant += auditBase.relevant_events
+        totals.ignored += auditBase.ignored_events
+        cursor = toSeq
+        batches += 1
+        continue
+      }
+
+      const projectId = options.projectFor(agent)?.project_id ?? null
+      const existing = activeMemory(projectId)
+      const answer = await callModel({
+        session,
+        sessionId,
+        fromSeq: cursor + 1,
+        toSeq: toSeq,
+        entries: window.entries,
+        existing: existing.map(record => ({
+          id: record.id,
+          scope: record.scope,
+          category: record.category,
+          content: record.content,
+        })),
+        signal: runOptions.signal,
+      })
+      const text = answer.text
+      // The usage belongs to the call, not the window, so it rides along with the
+      // window fields every audit construction already spreads.
+      const extras = auditBase as { usage?: ConsolidationUsage | undefined; model_raw?: string }
+      extras.usage = answer.usage
+      // The raw answer can quote the conversation, so it is kept only when a person
+      // asks for it with a dry run.
+      if (runOptions.dryRun === true && runOptions.showRaw === true) extras.model_raw = answer.text
+      const plan = parsePlan(text)
+      const reviewed = reviewPlan(plan, {
+        fromSeq: cursor + 1,
+        toSeq: toSeq,
+        visibleSeqs: new Set(window.entries.map(entry => entry.seq)),
+        eventsBySeq: new Map(observed.map((event: ObservedEvent) => [event.seq, event])),
+        existing,
+        projectId,
+        sessionId,
+        minConfidence: config.minConfidence,
+        quoteMaxChars: config.quoteMaxChars,
+        maxEvidencePerMemory: config.maxEvidencePerMemory,
+        now,
+      })
+
+      if (runOptions.dryRun === true) {
+        return {
+          ...auditBase,
+          status: 'dry-run',
+          accepted: reviewed.accepted.map(operation => ({
+            action: operation.action,
+            scope: operation.scope,
+            category: operation.category,
+            content: operation.content,
+            confidence: operation.confidence,
+            // Only an update or a supersede names a record; `add` has none.
+            target_id: operation.action === 'add' ? undefined : operation.target_id,
+            evidence_event_seqs: operation.evidence.event_seqs,
+            quote: operation.evidence.quote,
+          })),
+          rejected: reviewed.rejected,
+          noopReasons: reviewed.noopReasons,
+        }
+      }
+
+      const rejectedCount = reviewed.rejected.length
+      const rejected = countRejections(reviewed.rejected)
+      const operations = {
+        add: 0,
+        update: 0,
+        supersede: 0,
+        noop: reviewed.noopReasons.length,
+        skipped: 0,
+        failed: 0,
+      }
+
+      const outcome = await commitOperations(options.actionOptions, reviewed.accepted)
+
+      if (outcome.failures.length > 0) {
+        // Something a review accepted could not be written. The mark stays put, so
+        // the window is retried and the plan is formed again against current state.
+        logger?.warn?.(`dsh-reflection: consolidation left ${String(outcome.failures.length)} operation(s) unwritten for ${sessionId}`)
+        // Everything a plan contained is accounted for: written + duplicate-or-
+        // conflict + failed + no-op adds up to what the review accepted plus what
+        // it proposed nothing for.
+        recordAudit(session, {
+          ...auditBase,
+          status: 'partial',
+          operations: {
+            ...operations,
+            ...outcome.committed,
+            skipped: outcome.skipped.length,
+            failed: outcome.failures.length,
+          },
+          rejected: rejectedCount,
+          ...rejected,
+        })
+        return { ...auditBase, status: 'partial', committed: outcome.committed, failures: outcome.failures.length }
+      }
+
+      await withState(stateOptions, current => ({
+        changed: true,
+        state: advanceHwm(current, sessionId, toSeq, new Date(now()).toISOString()),
+      }))
+      collector.dropConsumed(sessionId, toSeq)
+      const written = { ...operations, ...outcome.committed, skipped: outcome.skipped.length }
+      recordAudit(session, { ...auditBase, status: 'success', operations: written, rejected: rejectedCount, ...rejected })
+      const wrote = written.add + written.update + written.supersede
+      logger?.info?.(`dsh-reflection: consolidation of ${sessionId} consumed ${String(auditBase.relevant_events)} event(s) and wrote ${String(wrote)}`)
+      last = { ...auditBase, status: 'success', operations: written, rejected: rejectedCount, ...rejected }
+      totals.relevant += auditBase.relevant_events
+      totals.ignored += auditBase.ignored_events
+      totals.operations.add += written.add
+      totals.operations.update += written.update
+      totals.operations.supersede += written.supersede
+      totals.operations.noop += written.noop
+      totals.operations.skipped += written.skipped
+      totals.operations.failed += written.failed
+      totals.rejected += rejectedCount
+      addUsage(answer.usage)
+      cursor = toSeq
+      batches += 1
     }
 
-    await withState(stateOptions, current => ({
-      changed: true,
-      state: advanceHwm(current, sessionId, toSeq, new Date(now()).toISOString()),
-    }))
-    collector.dropConsumed(sessionId, toSeq)
-    const written = { ...operations, ...outcome.committed, skipped: outcome.skipped.length }
-    recordAudit(session, { ...auditBase, status: 'success', operations: written, rejected: rejectedCount, ...rejected })
-    const wrote = written.add + written.update + written.supersede
-    logger?.info?.(`dsh-reflection: consolidation of ${sessionId} consumed ${String(auditBase.relevant_events)} event(s) and wrote ${String(wrote)}`)
-    return { ...auditBase, status: 'success', operations: written, rejected: rejectedCount, ...rejected }
+    if (last === undefined) return { status: 'nothing-pending' }
+    if (batches >= config.maxBatchesPerRun && observed.some(event => event.seq > cursor)) {
+      logger?.info?.(`dsh-reflection: consolidation of ${sessionId} stopped after ${String(batches)} window(s); more events remain`)
+    }
+    return {
+      ...last,
+      from_seq: totals.fromSeq,
+      to_seq: cursor,
+      relevant_events: totals.relevant,
+      ignored_events: totals.ignored,
+      operations: totals.operations,
+      rejected: totals.rejected,
+      ...totals.usage === undefined ? {} : { usage: totals.usage },
+    }
   }
 
   const trigger = createTrigger({

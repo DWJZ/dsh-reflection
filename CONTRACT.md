@@ -115,8 +115,11 @@ Memory 的物理位置不可配置：内部恒为 `path.join(resolvedDshHome, 'm
 | `minConfidence` | number | `0.8` | `[0, 1]` |
 | `maxRelevantEventsPerBatch` | integer | `200` | `>= 1` |
 | `maxTrajectoryBytesPerBatch` | integer | `65536` | `>= 128`（UTF-8 字节，作用于整条序列化 entry） |
+| `maxBatchesPerRun` | integer | `4` | `>= 1`（单次 run 消费的窗口上限） |
 
 没有 `maxOutputTokens`：规划调用不设插件侧输出上限，沿用 provider 自己的上限。
+
+积压按窗口逐个消费：单次 run 最多消费 `maxBatchesPerRun` 个窗口，没追平的部分留给下一次（mark 已推进到最后一个提交的窗口，不会重复）。回填的洞按 `MAX_BACKFILL_EVENTS`（2000 条）分块读取，只有真正读不到的块才记 gap。
 
 **`autoCommit: false` 表示"不要自己学"**：自动路径**根本不运行** —— debounce 不排期、不构造窗口、不调用模型，因此也不花任何 token。
 

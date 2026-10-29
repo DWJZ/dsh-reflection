@@ -51,6 +51,7 @@ export const DEFAULTS = Object.freeze({
     minConfidence: 0.8,
     maxRelevantEventsPerBatch: 200,
     maxTrajectoryBytesPerBatch: 65536,
+    maxBatchesPerRun: 4,
   }),
 })
 
@@ -130,6 +131,7 @@ function consolidationSetting(value: unknown): MemoryConsolidationSettings {
     minConfidence,
     maxRelevantEventsPerBatch: integerSetting(source.maxRelevantEventsPerBatch, fallback.maxRelevantEventsPerBatch, 'consolidation.maxRelevantEventsPerBatch', 1),
     maxTrajectoryBytesPerBatch: integerSetting(source.maxTrajectoryBytesPerBatch, fallback.maxTrajectoryBytesPerBatch, 'consolidation.maxTrajectoryBytesPerBatch', MIN_TRAJECTORY_BYTES_PER_BATCH),
+    maxBatchesPerRun: integerSetting(source.maxBatchesPerRun, fallback.maxBatchesPerRun, 'consolidation.maxBatchesPerRun', 1),
   }
 }
 

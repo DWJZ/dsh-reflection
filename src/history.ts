@@ -9,6 +9,7 @@
  *
  * The service is optional. A profile without it keeps the old behavior, where an
  * unreadable range is recorded as a gap; a failed read is treated the same way.
+ * A range over {@link MAX_BACKFILL_EVENTS} is requested in chunks by the caller.
  *
  * @module dsh-reflection/history
  */
@@ -17,13 +18,14 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { EventPayload, ObservedEvent } from './types/trajectory.js'
 
 /**
- * Largest hole one call will read.
+ * Largest range one history call will read.
  *
- * A batch is capped at a couple of hundred events, so a hole far larger than that
- * is read and mostly discarded. Past this size the range stays a gap: the cost of
- * pulling it in is not paid for something the window cannot use anyway.
+ * This is a chunk size, not a give-up threshold: consolidation reads a larger
+ * hole in consecutive chunks of this size, so a long backlog is drained rather
+ * than recorded as one gap. A single batch only uses a couple of hundred events,
+ * so chunking keeps each read close to what the window can consume.
  */
-const MAX_BACKFILL_EVENTS = 2000
+export const MAX_BACKFILL_EVENTS = 2000
 
 /** What one backfill needs from the harness. */
 export interface HistoryReader {

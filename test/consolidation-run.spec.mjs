@@ -117,6 +117,7 @@ function harness(options = {}) {
       minConfidence: 0.8,
       maxRelevantEventsPerBatch: 200,
       maxTrajectoryBytesPerBatch: 65536,
+      maxBatchesPerRun: options.maxBatchesPerRun ?? 4,
 
       maxEvidencePerMemory: 8,
       quoteMaxChars: 200,
@@ -348,6 +349,48 @@ console.log('an unobserved range is backfilled from Session history')
   check('no gap is recorded for a readable range', progress.gaps.length === 0, JSON.stringify(progress.gaps))
   check('the mark covers the whole window', progress.last_processed_seq === 4)
   check('the window starts at the stored mark', outcome.from_seq === 1, JSON.stringify(outcome))
+}
+
+console.log('a long hole is read in chunks and drained across runs')
+{
+  const at = '2026-09-29T00:00:00.000Z'
+  // A 4500-event hole: three reads of at most 2000 events each.
+  const historyEvents = []
+  for (let seq = 1; seq <= 4500; seq += 1) {
+    historyEvents.push(seq % 200 === 1 ? human(seq, '换一个话题') : assistant(seq, 'x'))
+  }
+  const reads = []
+  const harnessed = harness({
+    sessionId: 'session_backlog',
+    maxBatchesPerRun: 2,
+    history: {
+      async read(sessionId, fromSeq, toSeq) {
+        reads.push({ fromSeq, toSeq })
+        return historyEvents.filter(event => event.seq >= fromSeq && event.seq <= toSeq)
+      },
+    },
+  })
+  await state.withState({ statePath: STATE.statePath, lockPath: STATE.lockPath, lockTimeoutMs: 3000, staleLockMs: 60000 }, current => ({
+    changed: true,
+    state: state.advanceHwm(current, 'session_backlog', 0, at),
+  }))
+  observe(harnessed, [assistant(4501, 'resumed')])
+  const first = await harnessed.consolidation.consolidate(harnessed.agent)
+  check('the hole is read in chunk-sized ranges', reads.length === 3
+    && reads[0].fromSeq === 1 && reads[0].toSeq === 2000
+    && reads[1].fromSeq === 2001 && reads[1].toSeq === 4000
+    && reads[2].fromSeq === 4001 && reads[2].toSeq === 4500, JSON.stringify(reads))
+  check('the run consumes at most the configured number of windows',
+    harnessed.calls.length === 2, JSON.stringify(harnessed.calls.map(call => [call.fromSeq, call.toSeq])))
+  check('the first run stops at the second window', markOf('session_backlog') === 400)
+  check('the run reports the range it covered', first.from_seq === 1 && first.to_seq === 400, JSON.stringify(first))
+  check('the model saw the first window', harnessed.calls[0].fromSeq === 1 && harnessed.calls[0].toSeq === 200)
+  check('the model saw the next window', harnessed.calls[1].fromSeq === 201 && harnessed.calls[1].toSeq === 400)
+
+  const second = await harnessed.consolidation.consolidate(harnessed.agent)
+  check('the next run continues the backlog', harnessed.calls.length === 4 && markOf('session_backlog') === 800, JSON.stringify({ calls: harnessed.calls.length, mark: markOf('session_backlog') }))
+  check('no gap is recorded for a readable hole', state.readState(STATE.statePath).sessions.session_backlog.gaps.length === 0, JSON.stringify(state.readState(STATE.statePath).sessions.session_backlog.gaps))
+  check('the second run also reports its own range', second.from_seq === 401 && second.to_seq === 800, JSON.stringify(second))
 }
 
 console.log('a range the harness cannot read is still a gap')

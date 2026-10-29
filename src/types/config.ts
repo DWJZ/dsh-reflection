@@ -23,6 +23,8 @@ export interface MemoryConsolidationSettings {
   maxRelevantEventsPerBatch: number
   /** UTF-8 ceiling for the rendered trajectory. */
   maxTrajectoryBytesPerBatch: number
+  /** How many windows one run may consume before it leaves the rest for the next. */
+  maxBatchesPerRun: number
 }
 
 /** The diagnostic sink a deployment injects. */
