@@ -8,5 +8,14 @@
     "noAnswerFalsePositives": 3,
     "answerable": 33,
     "noAnswer": 3
+  },
+  "behavior": {
+    "passed": [
+      "write-then-read",
+      "user-cross-project",
+      "project-isolation",
+      "superseded-not-served",
+      "detail-lookup"
+    ]
   }
 }
