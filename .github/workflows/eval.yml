@@ -73,15 +73,34 @@ jobs:
           fi
           echo "DEEPSEEK_API_KEY present."
 
-      # Pinned on purpose: the evaluation compares runs, so the runtime that
-      # boots the plugin must not move between tags.
-      - name: Install the pinned dsh CLI
-        run: npm install --no-save --package-lock=false @deepseek-ai/dsh@0.2.1-rc.2
+      # The runtime is pinned to a harness commit, not the npm `dsh` package: the
+      # published CLI failed every tool-calling session on the Linux runner with
+      # "Cannot read properties of undefined (reading 'prepare')", while this
+      # checkout path is the one the local runs exercise. Pinning the commit keeps
+      # one tag comparable with the next.
+      - uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: f3803c96974ad4a94195fb97e5c637e9c2a3afe3
+          path: harness
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: harness/pnpm-lock.yaml
+
+      - name: Install the pinned harness
+        working-directory: harness
+        run: pnpm install --frozen-lockfile
 
       - name: Behavior evaluation
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          DSH_CLI: node_modules/@deepseek-ai/dsh/lib/bin.js
+          DSH_REPO: ${{ github.workspace }}/harness
         run: npm run eval:behavior
 
       - name: Summarize
