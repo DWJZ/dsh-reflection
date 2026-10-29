@@ -17,7 +17,7 @@ kind: "plugin-reference"
 
 Memory 也会自己留痕。打开 `sessionEvents` 后，每次 consolidation 运行、以及 Session 被归属到哪个项目，都会写进 Session 日志，由 Web UI 渲染成轨迹账本里的一行 —— 见 [Trajectory rows](#trajectory-rows)。
 
-本插件实现的契约 —— 存储位置、数据模型、操作语义、并发保证与验收标准 —— 是 [CONTRACT.md](CONTRACT.md)，测试按它编写。
+本插件实现的 contract —— 存储位置、数据模型、操作语义、并发保证与验收标准 —— 是 [CONTRACT.md](CONTRACT.md)，测试按它编写。
 
 ## 使用
 

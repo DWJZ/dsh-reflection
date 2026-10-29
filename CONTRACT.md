@@ -1,4 +1,4 @@
-# dsh-reflection 契约
+# dsh-reflection contract
 
 本文件是 `dsh-reflection` 的**唯一规范权威**，覆盖当前全部实现：Phase 1 的存储与显式操作，以及 Phase 2 的同步自动 consolidation。它规定存储位置、数据模型、操作语义、并发保证与验收标准；测试按它编写，实现按它验收；两者冲突时以本文件为准。
 
@@ -322,7 +322,7 @@ DSH 自动记录的 tool/call SessionEvent（含 memory_remember 的 arguments�
 其他 DSH subsystem 已存在的 trajectory
 ```
 
-`memory_remember` 的参数可能在本插件 execute **之前**就由 DSH 记为 `tool/call`，插件无法事后让已存在的 session event 消失。因此本契约不宣称"secret 不会出现在任何日志"。
+`memory_remember` 的参数可能在本插件 execute **之前**就由 DSH 记为 `tool/call`，插件无法事后让已存在的 session event 消失。因此本 contract 不宣称"secret 不会出现在任何日志"。
 
 ### 7.4 PII
 
@@ -1037,7 +1037,7 @@ DSH STORE 的固定 Commit 检查（Issue #1245）判定的两条确定原因是
 
 **改名范围与故意不改的部分：**
 
-- 改：`package.json` 的 `name`、`cordis.patch.yml` 的 Bundle entry `id`/`name`、README/契约文档中的插件名、
+- 改：`package.json` 的 `name`、`cordis.patch.yml` 的 Bundle entry `id`/`name`、README/contract 文档中的插件名、
   以及本机 desktop profile 的依赖键、bundle 列表与 patch entry id。
 - **改：会话记录名改为 harness 的 `plugin:` 命名空间** —— `plugin:dsh-reflection/consolidation`、
   `plugin:dsh-reflection/project`。`appendPluginRecord` 只接受这个命名空间，并由 harness 负责打上
@@ -1057,7 +1057,7 @@ DSH STORE 的固定 Commit 检查（Issue #1245）判定的两条确定原因是
 （`views.ts`、`registry.ts`、`jsonstore.ts`、`consolidation/state.ts`）各自声明了选项类型，其中
 `lockTimeoutMs`/`staleLockMs` 被写成可选；`ActionOptions.kill` 的类型也与 `process.kill` 的签名不一致；
 `commands.ts` 因此连带报出 `bound` 的未知类型。要收敛必须先统一这一组声明（阈值改为必需、探针类型
-统一为一个别名），再改各内部函数的契约 —— 这是一次约 6 个文件的结构改动，不是标注工作。
+统一为一个别名），再改各内部函数的 contract —— 这是一次约 6 个文件的结构改动，不是标注工作。
 
 ## 剩余 16 个类型错误：逐个的改法（已验证到"只剩执行"）
 

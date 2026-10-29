@@ -4,7 +4,7 @@
 # 安装：用 plugin_manager 的 install_bundle 指向本目录（它负责写 profile 的
 # package.json 与 cordis.patch.yml，不要手改）。
 #
-# 可在此行 config 下覆盖契约 §4 的任何字段，例如：
+# 可在此行 config 下覆盖 contract §4 的任何字段，例如：
 #       enabled: true
 #       indexBudgetBytes: 6000
 #       indexBudgetSplit: { user: 0.4, project: 0.6 }
