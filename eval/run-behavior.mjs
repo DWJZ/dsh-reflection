@@ -47,7 +47,7 @@ const ONLY = (() => {
 })()
 /** Keep the scratch tree so a failed run can be inspected. */
 const KEEP = process.argv.includes('--keep')
-/** Run every scenario a second time with Memory switched off, as a control arm. */
+/** Run every scenario a second time with Memory switched off, as a control run. */
 const CONTROL = process.argv.includes('--control')
 /** Route the scripted adapter owns; used by `--mock` to check the plumbing without a key. */
 const MOCK_MODEL = { provider: 'dsh-reflection-mock', model: 'dsh-reflection-mock', reasoningEffort: undefined }
@@ -115,7 +115,7 @@ function writeOverlay({ projectDir, home, model, dir, drive, control }) {
   const lines = [
     // Workspace instruction files are a second memory channel. Left on, a model
     // that cannot use Memory writes AGENTS.md instead, and the next session reads
-    // the fact back from it — in either arm.
+    // the fact back from it — in either run.
     '- id: agent-instructions',
     '  disabled: true',
     '',
@@ -406,7 +406,7 @@ async function runScenario(scenario, index, control = false) {
     const label = `${String(stepIndex + 1)}.${Object.keys(step).join('+')}`
     try {
       if (step.seed !== undefined) {
-        // The control arm must have nothing to find: seeding it would leave the
+        // The control run must have nothing to find: seeding it would leave the
         // facts on disk, and a model with shell access reads them.
         if (control) continue
         await seed({ home, ...step.seed, ...step.seed.project === undefined ? {} : { projectId: projectIds.get(step.seed.project) } })
@@ -416,7 +416,7 @@ async function runScenario(scenario, index, control = false) {
         await supersede({ home, ...step.supersede, ...step.supersede.project === undefined ? {} : { projectId: projectIds.get(step.supersede.project) } })
         steps.push({ label, pass: true })
       } else if (step.assertStore !== undefined) {
-        // Artifact assertions describe what the plugin wrote; the control arm has
+        // Artifact assertions describe what the plugin wrote; the control run has
         // no plugin, so only the session expectations are compared there.
         if (control) continue
         const result = checkStore({ home, ...step.assertStore, projectId: name => projectIds.get(name) })
@@ -461,8 +461,8 @@ async function runScenario(scenario, index, control = false) {
         sessionDurations.push(Date.now() - sessionStarted)
         tokens.inputTokens += session.usage.inputTokens
         tokens.outputTokens += session.usage.outputTokens
-        // The control arm keeps nothing: a later control session must not find
-        // this transcript (and the fact its task carried) on disk. Both arms lose
+        // The control run keeps nothing: a later control session must not find
+        // this transcript (and the fact its task carried) on disk. Both runs lose
         // the project's scratch files for the same reason.
         cleanProject(projectDir)
         if (control && !KEEP) rmSync(sessionHome, { recursive: true, force: true })
@@ -508,11 +508,11 @@ const scenarios = []
 const controls = new Map()
 const selected = ONLY === undefined ? SCENARIOS : SCENARIOS.filter(scenario => scenario.name.includes(ONLY))
 
-// The control pass runs first, before any Memory arm has written a store: a
+// The control pass runs first, before any memory run has written a store: a
 // model with shell access walks the filesystem, and a store from another
 // scenario would be as good as its own.
 if (CONTROL) {
-  console.log('\n## control arm (Memory off)')
+  console.log('\n## control run (Memory off)')
   for (const [index, scenario] of selected.entries()) {
     // Artifact-only scenarios have nothing the control can compare; skipping them
     // keeps the run short without weakening the comparison.
@@ -533,8 +533,8 @@ for (const [index, scenario] of selected.entries()) {
   console.log(`  ${result.pass ? 'PASS' : 'FAIL'} ${scenario.name} (${String(result.durationMs)} ms, ${String(result.tokens.inputTokens)} in / ${String(result.tokens.outputTokens)} out)`)
   if (CONTROL && controls.has(scenario.name)) {
     const control = controls.get(scenario.name)
-    const scored = arm => {
-      const checks = arm.steps.filter(step => step.scored === true)
+    const scored = run => {
+      const checks = run.steps.filter(step => step.scored === true)
       return { total: checks.length, passed: checks.filter(step => step.pass).length }
     }
     const memory = scored(result)

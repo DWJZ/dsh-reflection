@@ -51,7 +51,7 @@ jobs:
     name: behavior (real model, tag or manual)
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    # Two arms plus a harness checkout, install, and build.
+    # Two runs plus a harness checkout, install, and build.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

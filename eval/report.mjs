@@ -52,7 +52,7 @@ export function renderBehaviorReport(report) {
     ] : [],
   ]
   if (hasControl) {
-    lines.push('| Scenario | Memory | Control (off) | Δ | Time | Tokens in / out | Tools (Memory arm) |')
+    lines.push('| Scenario | Memory | Control (off) | Δ | Time | Tokens in / out | Tools (memory run) |')
     lines.push('|---|---|---|---|---|---|---|')
   }
   for (const scenario of report.scenarios) {
@@ -92,7 +92,7 @@ export function renderBehaviorReport(report) {
       && scenario.control.memory === scenario.control.without).map(scenario => scenario.name)
     if (equal.length > 0) lines.push('', `_No difference (the scenario does not currently discriminate): ${equal.join(', ')}._`)
   }
-  lines.push('', '_Tokens cover agent turns and consolidation audits for the Memory arm; summary-refresh calls are not attributed to a session event._', '')
+  lines.push('', '_Tokens cover agent turns and consolidation audits for the memory run; summary-refresh calls are not attributed to a session event._', '')
   return lines.join('\n')
 }
 

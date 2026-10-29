@@ -58,7 +58,7 @@ Scoring is rule-based, not judged: `all` (every string must appear), `none`
 (regexes that must not), `abstain` (the answer must decline). That keeps V1
 cheap and reproducible; an LLM judge is a later layer, not a prerequisite.
 
-### The control arm
+### The control run
 
 `--control` runs every scenario a second time with the plugin mounted
 `enabled: false`: no Memory tools, no injected summary, no policy. The rule is
@@ -69,13 +69,13 @@ the question is answerable without Memory and does not currently discriminate.
 Six details make the control honest, and each was added after watching a
 control cheat:
 
-- **The control pass runs first**, before any Memory arm has written a store: a
+- **The control pass runs first**, before any memory run has written a store: a
   model with shell access walks the filesystem, and another scenario's store is
   as good as its own.
 - Its sessions get a **fresh harness home each, deleted afterwards**, because a
   shared home keeps the earlier transcript and the model greps the fact out of it.
 - Seeding is skipped, so the facts are not on disk for a shell call to find.
-- **Workspace instruction files are disabled in both arms**, and each session's
+- **Workspace instruction files are disabled in both runs**, and each session's
   fixture project is cleaned afterwards. Without this, a model that cannot use
   Memory writes the fact into `AGENTS.md`; the next session then reads it from the
   injected instructions, and the control answers correctly without Memory.
