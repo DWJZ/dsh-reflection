@@ -129,6 +129,7 @@ function harness(options = {}) {
     kill: () => { throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' }) },
     projectFor: () => (options.projectless === true ? null : { project_id: PROJECT }),
     ...options.history === undefined ? {} : { history: options.history },
+    ...options.refreshSummary === undefined ? {} : { refreshSummary: options.refreshSummary },
     ...options.schedule === undefined ? {} : { schedule: options.schedule },
     ...options.cancelSchedule === undefined ? {} : { cancelSchedule: options.cancelSchedule },
     callModel: async request => {
@@ -197,6 +198,32 @@ console.log('a successful run advances the mark')
     runAudit.data.operations.add === 1 && !JSON.stringify(runAudit.data).includes('pnpm'))
   check('the audit records the window', runAudit.data.from_seq === 1 && runAudit.data.to_seq === 3)
   check('the description names the counts', describeOutcome(outcome).includes('1 added'))
+}
+
+console.log('a committed write refreshes the summary')
+{
+  const refreshed = []
+  const harnessed = harness({
+    sessionId: 'session_refresh',
+    modelAnswer: '{"operations":[{"action":"add","scope":"project","category":"state","content":"The summary refresh test uses pnpm.","confidence":0.94,"evidence_event_seqs":[1]}]}',
+    refreshSummary: async agent => { refreshed.push(agent?.session?.id) },
+  })
+  observe(harnessed, [human(1, '这个项目用 pnpm')])
+  await harnessed.consolidation.consolidate(harnessed.agent)
+  check('the summary refresh ran once', refreshed.length === 1, JSON.stringify(refreshed))
+  check('the refresh saw the Session', refreshed[0] === 'session_refresh', JSON.stringify(refreshed))
+}
+
+console.log('a noop does not refresh the summary')
+{
+  const refreshed = []
+  const harnessed = harness({
+    sessionId: 'session_refresh_noop',
+    refreshSummary: async () => { refreshed.push(1) },
+  })
+  observe(harnessed, [human(1, '这个项目用 pnpm')])
+  await harnessed.consolidation.consolidate(harnessed.agent)
+  check('no refresh without a write', refreshed.length === 0)
 }
 
 console.log('the mark is the only thing that limits a second run')

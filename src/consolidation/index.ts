@@ -168,6 +168,8 @@ export interface ConsolidationOptions {
   history?: HistoryReader | undefined
   projectFor(agent: MemoryAgent): ProjectEntry | null
   callModel?(request: ConsolidationRequest): Promise<ConsolidationAnswer>
+  /** Refresh the scope summaries after a run that wrote Memory. */
+  refreshSummary?(agent: MemoryAgent): Promise<void>
   schedule?(run: () => void, ms: number): ReturnType<typeof setTimeout>
   cancelSchedule?(handle: ReturnType<typeof setTimeout>): void
 }
@@ -600,6 +602,16 @@ export function createConsolidation(options: ConsolidationOptions) {
     }
 
     if (last === undefined) return { status: 'nothing-pending' }
+    const wroteSomething = totals.operations.add + totals.operations.update + totals.operations.supersede > 0
+    if (wroteSomething) {
+      // A consolidation that wrote Memory has invalidated the summary; refresh it
+      // now so the next request does not serve text written before the commit.
+      try {
+        await options.refreshSummary?.(agent)
+      } catch (failure) {
+        logger?.warn(`dsh-reflection: could not refresh the Memory summary after consolidation: ${failureMessage(failure)}`)
+      }
+    }
     if (batches >= config.maxBatchesPerRun && observed.some(event => event.seq > cursor)) {
       logger?.info?.(`dsh-reflection: consolidation of ${sessionId} stopped after ${String(batches)} window(s); more events remain`)
     }

@@ -72,10 +72,10 @@ the index lists every record by title and id; each record has its own file under
 </memory-summary>
 ```
 
-The summary text is written by the model: after a write — and on the next read
-after a consolidation — the Session's own model is asked to describe what Memory
-holds, and the answer is cached in `summary.md` beside the records. A write waits
-for that refresh, so the summary never describes Memory as it was before the call
+The summary text is written by the model: after a write or a consolidation that
+wrote Memory, the Session's own model is asked to describe what Memory holds, and
+the answer is cached in `summary.md` beside the records. The commit waits for
+that refresh, so the summary never describes Memory as it was before the call
 that just returned. Injection only reads the cache; it never calls a model. The
 summary call has no plugin-side output cap: it inherits the provider's own limit,
 so a reasoning model cannot spend a fixed budget on thinking and leave the answer

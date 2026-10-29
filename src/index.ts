@@ -292,6 +292,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
         history,
         host: settings.host,
         llmScope: () => llmScope ?? undefined,
+        refreshSummary: (agent: MemoryAgent) => summaryService.refresh(agent),
         collector: createCollector(),
         scopes,
         state: {
