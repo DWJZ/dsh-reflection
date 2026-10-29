@@ -386,7 +386,7 @@ async function runScenario(scenario, index) {
         if (session.failure !== undefined) {
           steps.push({ label, ...fail(session.failure) })
         } else if (session.code !== 0) {
-          steps.push({ label, ...fail(`exit ${String(session.code)}: ${session.stderr.slice(0, 300)}`) })
+          steps.push({ label, ...fail(`exit ${String(session.code)}: ${session.stderr.slice(0, 2000)}`) })
         } else if (step.expect !== undefined) {
           const result = checkAnswer(session.answer, step.expect)
           steps.push({ label, ...result, answer: session.answer, tools: session.tools })
