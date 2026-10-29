@@ -66,6 +66,12 @@ npm run eval:behavior -- --keep         # keep the scratch tree for inspection
 npm run eval:behavior -- --mock         # keyless plumbing check; expectations fail by design
 ```
 
+Each run writes two companions: `eval/report-<suite>.json` for comparison and
+`eval/report-<suite>.md` for a person. The Markdown one is a summary line, a table
+of cases, and every failure with the answer that produced it; when the suite runs
+in GitHub Actions it becomes the job summary (`$GITHUB_STEP_SUMMARY`), so the run
+page shows the conclusion and the numbers without opening an artifact.
+
 The report carries the run's cost beside its result: input/output tokens and the
 p50 session latency. Tokens come from a spy fixture (`eval/fixtures/usage-spy.ts`)
 reading committed `assistant/message` usage and the consolidator's audit, so

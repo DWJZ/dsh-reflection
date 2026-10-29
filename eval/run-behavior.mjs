@@ -21,6 +21,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { renderBehaviorReport } from './report.mjs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const EVAL = dirname(fileURLToPath(import.meta.url))
@@ -30,6 +31,7 @@ const CLI = process.env.DSH_CLI ?? join(REPO, 'apps/cli/src/bin.ts')
 const DATA = JSON.parse(readFileSync(join(EVAL, 'data/scenarios.json'), 'utf8'))
 const BASELINE_PATH = join(EVAL, 'baseline.json')
 const REPORT_PATH = join(EVAL, 'report-behavior.json')
+const REPORT_MD = join(EVAL, 'report-behavior.md')
 const SESSION_TIMEOUT_MS = 180_000
 
 const CONFIG_ONLY = process.argv.includes('--check')
@@ -444,6 +446,7 @@ const metrics = {
 }
 const report = {
   version: 1,
+  ...process.env.GITHUB_SHA === undefined ? {} : { gitSha: process.env.GITHUB_SHA },
   model: MOCK ? MOCK_MODEL : DATA.model,
   dataset: DATA.version,
   scenarios,
@@ -453,6 +456,7 @@ const report = {
   total: scenarios.length,
 }
 writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`)
+writeFileSync(REPORT_MD, renderBehaviorReport(report))
 console.log(`\n${String(passed)}/${String(scenarios.length)} scenarios passed`)
 console.log(`tokens: ${String(metrics.inputTokens)} in / ${String(metrics.outputTokens)} out over ${String(metrics.sessions)} sessions; p50 session ${String(metrics.p50SessionMs)} ms`)
 console.log('note: usage covers agent turns and consolidation audits; summary-refresh calls are not attributed to a session event')

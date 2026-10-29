@@ -14,12 +14,14 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { renderRetrievalReport } from './report.mjs'
 
 const EVAL = dirname(fileURLToPath(import.meta.url))
 const PLUGIN = resolve(EVAL, '..')
 const DATA = JSON.parse(readFileSync(join(EVAL, 'data/retrieval.json'), 'utf8'))
 const BASELINE_PATH = join(EVAL, 'baseline.json')
 const REPORT_PATH = join(EVAL, 'report-retrieval.json')
+const REPORT_MD = join(EVAL, 'report-retrieval.md')
 
 /** Tolerance below the baseline before a metric counts as a regression. */
 const TOLERANCE = 0.03
@@ -92,10 +94,18 @@ const byKind = Object.fromEntries([...new Set(answerable.map(query => query.kind
   return [kind, { n: rows.length, recall3: mean(rows, 'recall3'), mrr: mean(rows, 'mrr') }]
 }))
 
-const report = { version: 1, dataset: DATA.version, metrics, byKind, results }
+const report = {
+  version: 1,
+  ...process.env.GITHUB_SHA === undefined ? {} : { gitSha: process.env.GITHUB_SHA },
+  dataset: DATA.version,
+  metrics,
+  byKind,
+  results,
+}
 writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`)
 
 const baseline = existsSync(BASELINE_PATH) ? JSON.parse(readFileSync(BASELINE_PATH, 'utf8')) : undefined
+writeFileSync(REPORT_MD, renderRetrievalReport(report, baseline))
 if (process.argv.includes('--update-baseline')) {
   const next = { ...baseline, version: 1, retrieval: metrics }
   writeFileSync(BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`)
