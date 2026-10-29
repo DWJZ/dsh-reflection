@@ -104,6 +104,21 @@ export function truncateChars(text: string, limit: number): string {
 }
 
 /**
+ * Derive a one-line title from content.
+ *
+ * Used for legacy records and for callers that did not supply one. Authored
+ * titles are not length-limited; this derivation is only a fallback, so it keeps
+ * the index scannable by cutting a long first line.
+ * @param content - the record text.
+ * @returns a single-line title.
+ */
+export function deriveTitle(content: string): string {
+  const line = content.normalize('NFC').replace(/\s+/gu, ' ').trim()
+  const characters = Array.from(line)
+  return characters.length <= 100 ? line : `${characters.slice(0, 100).join('')}…`
+}
+
+/**
  * Whether a value is an ISO-8601 UTC instant with millisecond precision.
  * @param value - the value to test.
  * @returns true when the value is a canonical timestamp this plugin writes.
@@ -143,6 +158,13 @@ export function validateMemory(record: MemoryRecord, options: CheckOptions = {})
     }
   } else if (record.project_id !== null) {
     throw new TypeError(`dsh-reflection: memory ${record.id}: project_id must be null for scope "user", got ${JSON.stringify(record.project_id)}`)
+  }
+
+  if (typeof record.title !== 'string' || record.title.trim() === '') {
+    throw new TypeError(`dsh-reflection: memory ${record.id}: title must be a non-empty string`)
+  }
+  if (/[\n\r\u2028\u2029]/u.test(record.title)) {
+    throw new TypeError(`dsh-reflection: memory ${record.id}: title must be a single line`)
   }
 
   if (typeof record.content !== 'string' || record.content.trim() === '') {

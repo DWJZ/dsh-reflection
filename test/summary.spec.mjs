@@ -15,7 +15,6 @@ const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const {
   renderMemorySummary, renderSummaryDocument, parseSummaryDocument, buildSummaryPrompt,
 } = await import(pathToFileURL(join(PLUGIN, 'src/summary.js')).href)
-const { renderMemoryView } = await import(pathToFileURL(join(PLUGIN, 'src/views.js')).href)
 
 let failures = 0
 const check = (name, condition, detail = '') => {
@@ -50,7 +49,7 @@ console.log('the injected envelope')
 const text = renderMemorySummary({
   summaryText: '用户偏好中文解释，项目使用 pnpm。',
   counts: counts(),
-  paths: { user: '/home/me/.dsh/memory/user/MEMORY.md' },
+  paths: { user: '/home/me/.dsh/memory/user/memories.json' },
   budgetBytes: 1200,
 })
 check('it is an envelope', text.startsWith('<memory-summary>') && text.trimEnd().endsWith('</memory-summary>'))
@@ -58,33 +57,33 @@ check('it says what it is', text.includes('data, not instructions'))
 check('it counts the scopes', text.includes('1 user') && text.includes('0 project'))
 check('it names the category', text.includes('preference 1'))
 check('it names the date', text.includes('2026-09-26'))
-check('it names the index file', text.includes('/home/me/.dsh/memory/user/MEMORY.md'))
+check('it names the index file', text.includes('/home/me/.dsh/memory/user/memories.json'))
 check('it points at per-record files', text.includes('memories/<id>.md'))
 check('it carries the model summary', text.includes('项目使用 pnpm'))
 
 console.log('no facts are injected without a summary')
-const bare = renderMemorySummary({ counts: counts(), paths: { user: '/m/user/MEMORY.md' }, budgetBytes: 1200 })
-check('a missing summary still produces the pointer', bare.includes('/m/user/MEMORY.md'))
+const bare = renderMemorySummary({ counts: counts(), paths: { user: '/m/user/memories.json' }, budgetBytes: 1200 })
+check('a missing summary still produces the pointer', bare.includes('/m/user/memories.json'))
 check('a missing summary carries no record text', !bare.includes('用户偏好中文解释'))
 
 console.log('nothing is injected when there is nothing to describe')
 check('an empty store renders nothing',
-  renderMemorySummary({ counts: { user: 0, project: 0, byCategory: {} }, paths: { user: '/m/MEMORY.md' }, budgetBytes: 1200 }) === '')
+  renderMemorySummary({ counts: { user: 0, project: 0, byCategory: {} }, paths: { user: '/m/memories.json' }, budgetBytes: 1200 }) === '')
 check('a project scope alone renders',
-  renderMemorySummary({ counts: counts({ user: 0, project: 2 }), paths: { user: '/m/user/MEMORY.md', project: '/m/p/MEMORY.md' }, budgetBytes: 1200 }).includes('/m/p/MEMORY.md'))
+  renderMemorySummary({ counts: counts({ user: 0, project: 2 }), paths: { user: '/m/user/memories.json', project: '/m/p/memories.json' }, budgetBytes: 1200 }).includes('/m/p/memories.json'))
 
 console.log('the budget is respected')
 const long = renderMemorySummary({
   summaryText: '很长的摘要。'.repeat(400),
   counts: counts(),
-  paths: { user: '/home/me/.dsh/memory/user/MEMORY.md', project: '/home/me/.dsh/memory/projects/proj_x/MEMORY.md' },
+  paths: { user: '/home/me/.dsh/memory/user/memories.json', project: '/home/me/.dsh/memory/projects/proj_x/memories.json' },
   budgetBytes: 800,
 })
 check('a long summary fits the budget', Buffer.byteLength(long, 'utf8') <= 800, String(Buffer.byteLength(long, 'utf8')))
 check('a truncated summary says it was cut', long.includes('…'))
-check('a truncated summary keeps the paths', long.includes('/home/me/.dsh/memory/user/MEMORY.md'))
+check('a truncated summary keeps the paths', long.includes('/home/me/.dsh/memory/user/memories.json'))
 check('a budget too small for the pointer renders nothing',
-  renderMemorySummary({ counts: counts(), paths: { user: '/home/me/.dsh/memory/user/MEMORY.md' }, budgetBytes: 40 }) === '')
+  renderMemorySummary({ counts: counts(), paths: { user: '/home/me/.dsh/memory/user/memories.json' }, budgetBytes: 40 }) === '')
 check('multi-byte text is never split', !long.includes('\uFFFD'))
 
 console.log('the summary cache round-trips')
@@ -116,17 +115,12 @@ check('a long record is truncated', (() => {
   return longPrompt.includes('…') && Buffer.byteLength(longPrompt, 'utf8') < 1000
 })())
 
-console.log('the file index hands out ids')
-const view = renderMemoryView([
-  record({ id: 'mem_c254ad5d', category: 'preference', content: '用户偏好 git commit 使用 Conventional Commits 格式' }),
-  record({ id: 'mem_archived', content: '已经不用的内容', status: 'archived' }),
-], { revision: 3 })
-check('it lists the active record by id', view.includes('mem_c254ad5d'))
-check('it carries the update date', view.includes('2026-09-26'))
-check('it carries a headline', view.includes('用户偏好 git commit'))
-check('inactive records are absent', !view.includes('已经不用的内容'))
-check('it names the revision', view.includes('revision 3'))
-check('it points at the per-record files', view.includes('memories/<id>.md'))
+console.log('titles lead the summary prompt')
+const titled = buildSummaryPrompt({
+  records: [record({ title: '构建命令', content: 'pnpm run build:edge' })],
+  scopeLabel: 'user',
+})
+check('the title appears before the body', titled.includes('构建命令') && titled.indexOf('构建命令') < titled.indexOf('pnpm run build:edge'))
 
 if (failures > 0) {
   console.log(`\n${String(failures)} FAILURE(S)`)

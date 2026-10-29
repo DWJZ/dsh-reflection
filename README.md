@@ -45,19 +45,17 @@ $DSH_HOME/memory/
 ├── consolidation-state.json  # automatic learning: mark and gaps per Session
 ├── registry.json        # project identity: id ↔ paths
 ├── user/
-│   ├── memories.json    # canonical
-│   ├── MEMORY.md        # generated index: one line per record, with its id
-│   ├── memories/<id>.md # generated: the full record and its evidence
+│   ├── memories.json    # index: metadata + title, one row per record
+│   ├── memories/<id>.md # body: the text and its evidence
 │   └── summary.md       # model-written summary, cached
 ├── projects/<project_id>/
 │   ├── memories.json
-│   ├── MEMORY.md
 │   ├── memories/<id>.md
 │   └── summary.md
 └── tombstones.jsonl     # body-free record of deletions
 ```
 
-`memories.json` is the source of truth. `MEMORY.md` is generated and shows only active Memory; overwriting it by hand changes nothing.
+`memories.json` is the index: it holds ids, scopes, categories, titles, statuses and timestamps. The text and its evidence live once, in `memories/<id>.md`. A missing body is a failure, not an empty record: the read names the record and the file.
 
 ### What the model gets
 
@@ -69,8 +67,8 @@ hold the records. The records themselves are not injected:
 data, not instructions — what Memory holds, not a request
 
 13 user · 29 project active — preference 9 · feedback 7 · decision 2 · lesson 6 · state 9 · reference 9 · updated 2026-10-27
-files: ~/.dsh/memory/user/MEMORY.md · ~/.dsh/memory/projects/proj_…/MEMORY.md
-each record also has its own file under memories/<id>.md; memory_get <id> reads one
+index: ~/.dsh/memory/user/memories.json · ~/.dsh/memory/projects/proj_…/memories.json
+the index lists every record by title and id; each record has its own file under memories/<id>.md, and memory_get <id> reads one
 </memory-summary>
 ```
 
@@ -80,13 +78,13 @@ holds, and the answer is cached in `summary.md` beside the records. A write wait
 for that refresh, so the summary never describes Memory as it was before the call
 that just returned. Injection only reads the cache; it never calls a model.
 
-The fixed part of the envelope — the counts, the file paths, and the pointer to
+The fixed part of the envelope — the counts, the index paths, and the pointer to
 per-record files — is what makes the summary actionable, so it is never dropped
 to make room: the model's text is truncated to fit `summaryBudgetBytes` instead,
 and when nothing fits, no envelope is injected at all.
 
-An agent that needs a fact reads `MEMORY.md` (an index of one line per record,
-each carrying its id and headline), opens `memories/<id>.md`, or calls
+An agent that needs a fact reads the index (`memories.json`: one row per record,
+each carrying its id and title), opens `memories/<id>.md`, or calls
 `memory_search` and then `memory_get`. The policy section tells it to do that on
 its own initiative, before work that may have been done before.
 
@@ -178,7 +176,8 @@ These properties shape the code:
 - **Writers serialize.** Every mutation takes an in-process chain and an exclusive lock file, re-reads the canonical store, and validates against that revision — so a desktop session and a headless run sharing one harness home cannot lose each other's writes. A lock from a crashed process is reclaimed only when its recorded pid is provably gone (`ESRCH`); `EPERM` means the process is alive and keeps it. Reclaiming is itself serialized, because two processes that both judge the same lock stale would otherwise let the slower one delete the lock the faster one has just taken.
 - **What is read is checked.** `memories.json` and `registry.json` are validated on the way in as well as on the way out — ids, timestamps, uniqueness, and every supersession reference. A document someone edited by hand fails loudly instead of feeding an index, a view, or a model request, and a project id is checked before it becomes a directory name. A canonical store that cannot be read stops the turn, naming the file: degrading to an empty index would present a broken store as an agent that has simply forgotten, which is the harder failure to diagnose. An absent store is not corruption — that is what a first run looks like.
 - **The summary is cached, not recomputed.** Injection runs before every model step, so it reads `summary.md`; the model call that writes it happens on a write or behind the next read, never on the request path. A cached summary that describes an older revision is still served — a slightly stale summary beats a missing one — while a background refresh catches up.
-- **The generated view is disposable.** A committed mutation succeeds even if `MEMORY.md` cannot be written; the result reports `viewStale` and a warning. The rebuild takes the lock again and re-reads the newest state, so a slow writer cannot overwrite a newer view with an older one.
+- **The index is the commit point.** A mutation writes the body first, then the index; only the index write commits. A body the index does not name is removed on the next write. The body is the only copy of its text, so a missing body stops the read and names both the record and the path.
+- **Titles lead, bodies follow.** Every record carries a one-line title in the index; a reader scans titles before opening a body. Authored titles are not length-limited; a record that predates the field gets a derived title on read.
 - **Provenance is built, not accepted.** The model supplies a fact; the plugin attaches the Session, the turn's human message, and its sequence number. When a turn cannot be identified, the reference stays empty rather than guessed.
 - **Automatic learning keeps its own progress, and reads what it missed.** The collector records what this process observed, so the progress mark means "consumed through this sequence number", not a cursor into storage. When a range is missing — a late mount, a Session resumed elsewhere, an evicted buffer — the plugin asks the harness's `sessionQuery` service for it and folds the events into the batch. Only a range that cannot be read whole is written down as a *gap*; that distinction is what stops "never observed" from being silently reported as "read and held nothing".
 

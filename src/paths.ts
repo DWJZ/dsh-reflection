@@ -49,9 +49,9 @@ export function resolveMemoryDir(dshHome: string): string {
 }
 
 /**
- * Resolve the three files one scope owns inside its directory.
+ * Resolve the files one scope owns inside its directory.
  * @param scopeDir - the directory holding one scope's Memory.
- * @returns the canonical store, its lock, and the generated view.
+ * @returns the index, its lock, the body directory, and the summary cache.
  */
 export function scopeLayout(scopeDir: string): ScopeLayout {
   const dir = resolve(expandHome(scopeDir))
@@ -59,7 +59,6 @@ export function scopeLayout(scopeDir: string): ScopeLayout {
     dir,
     storePath: join(dir, 'memories.json'),
     lockPath: join(dir, 'memories.json.lock'),
-    viewPath: join(dir, 'MEMORY.md'),
     recordsDir: join(dir, 'memories'),
     summaryPath: join(dir, 'summary.md'),
   }

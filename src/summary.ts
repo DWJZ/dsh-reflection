@@ -162,7 +162,7 @@ export function buildSummaryPrompt(input: {
     const text = record.content.length > RECORD_CHARS_IN_PROMPT
       ? `${record.content.slice(0, RECORD_CHARS_IN_PROMPT)}…`
       : record.content
-    const block = `\n- ${record.category} · ${record.updated_at.slice(0, 10)}\n${text}`
+    const block = `\n- ${record.category} · ${record.updated_at.slice(0, 10)} · ${record.title}\n${text}`
     const size = Buffer.byteLength(block, 'utf8')
     if (bytes + size > PROMPT_BUDGET_BYTES) break
     lines.push(block)
@@ -174,7 +174,7 @@ export function buildSummaryPrompt(input: {
 /**
  * Render the injected envelope.
  *
- * The fixed part — counts, file paths, and the pointer to per-record files — is
+ * The fixed part — counts, the index paths, and the pointer to per-record files — is
  * what makes the summary actionable, so it is never dropped to make room; the
  * model's text is truncated instead. When even the fixed part cannot fit, nothing
  * is injected: an envelope without a path to read tells the model nothing.
@@ -209,8 +209,8 @@ export function renderMemorySummary(input: {
     countsLine + updatedLine,
     ...body === '' ? [] : ['', body],
     '',
-    `files: ${files.join(' · ')}`,
-    'each record also has its own file under memories/<id>.md; memory_get <id> reads one',
+    `index: ${files.join(' · ')}`,
+    'the index lists every record by title and id; each record has its own file under memories/<id>.md, and memory_get <id> reads one',
     '',
     '</memory-summary>',
     '',
@@ -218,10 +218,11 @@ export function renderMemorySummary(input: {
   const budget = Math.max(0, input.budgetBytes)
   // The pointer is what makes the summary actionable, so it is never dropped to
   // make room: the model's text is truncated first, and when even the fixed part
-  // cannot fit nothing is injected at all.
-  const fixedSize = Buffer.byteLength(envelope(''), 'utf8')
-  if (fixedSize > budget) return ''
-  const room = budget - fixedSize - 1
+  // cannot fit nothing is injected at all. Measure with a one-character body so
+  // the separator and the body slot are both counted.
+  const overhead = Buffer.byteLength(envelope('x'), 'utf8') - 1
+  if (overhead > budget) return ''
+  const room = budget - overhead
   if (room <= 0) return envelope('')
   return envelope(truncateBytes((input.summaryText ?? '').trim(), room))
 }

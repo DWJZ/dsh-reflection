@@ -1,13 +1,14 @@
 /**
- * Canonical store persistence.
+ * Canonical store persistence: an index plus one body file per record.
  *
- * `memories.json` is the source of truth: `{ schema_version, revision, records }`.
- * Every mutation runs under the store lock against the latest revision, so a
- * writer never validates against state another process has already replaced.
+ * `memories.json` holds metadata — id, category, title, status, timestamps.
+ * The text and its evidence live beside it in `memories/<id>.md`. The index
+ * write is the commit point: a body is written first, and a body the index does
+ * not name is an orphan the next write removes.
  *
- * The temporary file is written, flushed, and renamed into place, and is removed
- * when any step before the rename fails — a store that cannot be written must not
- * leave fragments of old Memory behind in the memory directory.
+ * A body is the only copy of its text, so a missing body is a failure rather
+ * than a record to skip: silently serving the index would claim Memory exists
+ * while the text it points at does not.
  *
  * @module dsh-reflection/jsonstore
  */
@@ -20,16 +21,40 @@ import { rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import { withLock } from './lock.js'
-import { validateStoreRecords } from './schema.js'
+import { deriveTitle, isMemoryId, validateStoreRecords } from './schema.js'
 import { failureMessage } from './errors.js'
 import type { SweepOptions } from './types/seams.js'
-import type { MemoryRecord, MemoryStore } from './types/memory.js'
+import type { EvidenceEntry, MemoryCategory, MemoryRecord, MemoryScope, MemoryStore } from './types/memory.js'
 
 /** Format version this build writes; an unknown version is refused, never guessed. */
-export const STORE_SCHEMA_VERSION = 1
+export const STORE_SCHEMA_VERSION = 2
 
 /** Suffix every temporary file this plugin creates carries. */
 export const TEMP_MARKER = '.dsh-reflection-tmp-'
+
+/** One row of the index: every field of a record except its text and evidence. */
+interface IndexRow {
+  id: string
+  scope: MemoryScope
+  project_id?: string | null
+  category: MemoryCategory
+  title: string
+  status: string
+  confidence: number
+  created_at: string
+  updated_at: string
+  superseded_by?: string | null
+  /** Version 1 kept these in the index; version 2 reads them from the body. */
+  content?: string
+  evidence?: EvidenceEntry[]
+}
+
+/** One store document, before bodies are read. */
+interface StoreDocument {
+  schema_version: number
+  revision: number
+  records: IndexRow[]
+}
 
 /**
  * Build an empty store.
@@ -42,26 +67,26 @@ export function emptyStore() {
 /**
  * Read one canonical store and validate every record it holds.
  *
- * Validation happens on the way in as well as on the way out: a store someone
- * edited by hand, or one left by an older build, must fail loudly here rather
- * than have its invalid records reach an index, a view, or a model request.
+ * Bodies are read here, so callers keep seeing complete records while the disk
+ * layout stays split.
  * @param storePath - absolute path of `memories.json`.
  * @returns the stored document, or an empty store when the file is absent.
- * @throws when the file is unreadable, malformed, or violates the record schema.
+ * @throws when the file is malformed, a body is missing, or a record is invalid.
  */
 export function readStore(storePath: string) {
-  const document = parseStore(storePath)
-  validateStoreRecords(document.records)
-  return document
+  const document = parseStoreDocument(storePath)
+  const records = readRecords(storePath, document)
+  validateStoreRecords(records)
+  return { schema_version: document.schema_version, revision: document.revision, records }
 }
 
 /**
- * Read one canonical store, checking only the document's own shape.
+ * Read one store document, checking only its own shape.
  * @param storePath - absolute path of `memories.json`.
- * @returns the stored document, or an empty store when the file is absent.
- * @throws when the file is unreadable, malformed, or written by another format version.
+ * @returns the parsed document, or an empty one when the file is absent.
+ * @throws when the file is unreadable, malformed, or written by an unknown format.
  */
-function parseStore(storePath: string) {
+function parseStoreDocument(storePath: string): StoreDocument {
   if (!existsSync(storePath)) return emptyStore()
   const text = readFileSync(storePath, 'utf8')
   let parsed
@@ -73,8 +98,8 @@ function parseStore(storePath: string) {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(`dsh-reflection: ${storePath} must hold a JSON object`)
   }
-  if (parsed.schema_version !== STORE_SCHEMA_VERSION) {
-    throw new Error(`dsh-reflection: ${storePath} has schema_version ${JSON.stringify(parsed.schema_version)}, this build writes ${String(STORE_SCHEMA_VERSION)}`)
+  if (parsed.schema_version !== 1 && parsed.schema_version !== STORE_SCHEMA_VERSION) {
+    throw new Error(`dsh-reflection: ${storePath} has schema_version ${JSON.stringify(parsed.schema_version)}, this build reads 1 and ${String(STORE_SCHEMA_VERSION)}`)
   }
   if (!Number.isInteger(parsed.revision) || parsed.revision < 0) {
     throw new Error(`dsh-reflection: ${storePath} has an invalid revision ${JSON.stringify(parsed.revision)}`)
@@ -83,6 +108,64 @@ function parseStore(storePath: string) {
     throw new Error(`dsh-reflection: ${storePath} must hold a records array`)
   }
   return parsed
+}
+
+/**
+ * Assemble the logical records a document describes.
+ *
+ * A version-1 document carries text in the index; a version-2 document points at
+ * body files. Both return the same record shape.
+ * @param storePath - the index file, used to locate bodies.
+ * @param document - the parsed index document.
+ * @returns complete records.
+ * @throws when a body is missing or malformed, or an index row has no valid id.
+ */
+function readRecords(storePath: string, document: StoreDocument): MemoryRecord[] {
+  const legacy = document.schema_version === 1
+  const recordsDir = join(dirname(storePath), 'memories')
+  return document.records.map((row: IndexRow): MemoryRecord => {
+    if (typeof row !== 'object' || row === null || !isMemoryId(row.id)) {
+      throw new TypeError(`dsh-reflection: ${storePath} holds an index row without a valid Memory id`)
+    }
+    const title = typeof row.title === 'string' && row.title !== ''
+      ? row.title
+      : deriveTitle(typeof row.content === 'string' ? row.content : '')
+    if (legacy) {
+      return {
+        id: row.id,
+        scope: row.scope,
+        category: row.category,
+        title,
+        status: row.status,
+        content: typeof row.content === 'string' ? row.content : '',
+        confidence: row.confidence,
+        project_id: row.project_id ?? null,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        evidence: Array.isArray(row.evidence) ? row.evidence : [],
+        superseded_by: row.superseded_by ?? null,
+      }
+    }
+    const bodyPath = join(recordsDir, `${row.id}.md`)
+    if (!existsSync(bodyPath)) {
+      throw new Error(`dsh-reflection: memory ${row.id} has no body at ${bodyPath}`)
+    }
+    const { content, evidence } = parseRecordBody(readFileSync(bodyPath, 'utf8'))
+    return {
+      id: row.id,
+      scope: row.scope,
+      category: row.category,
+      title,
+      status: row.status,
+      content,
+      confidence: row.confidence,
+      project_id: row.project_id ?? null,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      evidence,
+      superseded_by: row.superseded_by ?? null,
+    }
+  })
 }
 
 /**
@@ -122,6 +205,67 @@ export function writeAtomic(targetPath: string, text: string) {
       }
     }
   }
+}
+
+/**
+ * Render one record's body file.
+ *
+ * The text is the file's first paragraph; evidence follows under its own
+ * heading so a person reading the file sees what the record is grounded in.
+ * @param record - the record to render.
+ * @returns the complete file content.
+ */
+export function renderRecordBody(record: MemoryRecord) {
+  const lines = [record.content, '']
+  if (record.evidence.length > 0) {
+    lines.push('## Evidence', '')
+    for (const entry of record.evidence) {
+      const seqs = entry.event_seqs.length === 0 ? 'no seq' : `seq ${entry.event_seqs.join(',')}`
+      lines.push(`- ${entry.observed_at} · ${entry.kind} · ${seqs} · session ${entry.session_id}`)
+      if (entry.quote !== '') lines.push(`  > ${singleLine(entry.quote)}`)
+    }
+    lines.push('')
+  }
+  return lines.join('\n')
+}
+
+/**
+ * Parse one record body back into text and evidence.
+ * @param text - the body file content.
+ * @returns the record text and its evidence.
+ * @throws when an evidence line does not have the rendered shape.
+ */
+export function parseRecordBody(text: string) {
+  const marker = '\n## Evidence\n'
+  const at = text.indexOf(marker)
+  const content = (at < 0 ? text : text.slice(0, at)).trim()
+  const evidence: EvidenceEntry[] = []
+  if (at >= 0) {
+    let current: EvidenceEntry | undefined
+    for (const line of text.slice(at + marker.length).split('\n')) {
+      if (line.startsWith('- ')) {
+        const match = /^- (.+?) · (.+?) · (?:seq ([\d,]+)|no seq) · session (.+)$/u.exec(line)
+        if (match === null) {
+          throw new Error(`dsh-reflection: malformed evidence line in a record body: ${JSON.stringify(line)}`)
+        }
+        const [, observedAt, kind, seqs, sessionId] = match
+        if (observedAt === undefined || kind === undefined || sessionId === undefined) {
+          throw new Error(`dsh-reflection: malformed evidence line in a record body: ${JSON.stringify(line)}`)
+        }
+        current = {
+          observed_at: observedAt,
+          kind,
+          event_seqs: seqs === undefined ? [] : seqs.split(',').map(Number),
+          session_id: sessionId,
+          quote: '',
+        }
+        evidence.push(current)
+      } else if (line.startsWith('  > ') && current !== undefined) {
+        current.quote = line.slice(4)
+      }
+    }
+  }
+  return { content, evidence }
 }
 
 /**
@@ -181,29 +325,14 @@ function findTemps(dir: string) {
   return found
 }
 
-/**
- * Apply one mutation to the canonical store under the store lock.
- *
- * The operation receives the latest stored revision, so a target it judges
- * against cannot be replaced between the check and the write.
- * @param {object} options - store location and lock thresholds.
- * @param options.storePath - absolute path of `memories.json`.
- * @param options.lockPath - absolute path of the store lock file.
- * @param options.lockTimeoutMs - how long to wait for the lock.
- * @param options.staleLockMs - age at which a lock becomes reclaimable.
- * @param options.host - current host name.
- * @param options.kill - signal sender, injectable for tests.
- * @param options.now - clock, injectable for tests.
- * @param options.logger - optional `{ warn }` sink.
- * @param operation - receives the latest store, returns `{ result, changed }`.
- * @returns the operation's result and the store now on disk.
- */
 /** Where one store lives, and the lock that guards it. */
 export interface StoreLockOptions {
-  /** The store file. */
+  /** The index file. */
   storePath: string
   /** Its lock file. */
   lockPath: string
+  /** Its body directory; defaults to `memories/` beside the index. */
+  recordsDir?: string | undefined
   /** How long to wait for the lock before reporting the file. */
   lockTimeoutMs: number
   /** Age at which an existing lock is treated as abandoned. */
@@ -229,15 +358,29 @@ export type StoreMutation<T = Record<string, unknown>> =
   | { changed: true; records: MemoryRecord[]; result?: T }
   | { changed?: false | undefined; records?: undefined; result?: T }
 
+/**
+ * Apply one mutation to the canonical store under the store lock.
+ *
+ * The operation receives the latest stored revision, so a target it judges
+ * against cannot be replaced between the check and the write.
+ * @param {object} options - store location and lock thresholds.
+ * @param operation - receives the latest store, returns `{ result, changed }`.
+ * @returns the operation's result and the store now on disk.
+ */
 export async function withStore<T = Record<string, unknown>>(
   options: StoreLockOptions,
   operation: (store: MemoryStore) => StoreMutation<T> | undefined,
 ) {
   return withLock(options, () => {
-    const store = parseStore(options.storePath)
+    const document = parseStoreDocument(options.storePath)
+    const store: MemoryStore = {
+      schema_version: document.schema_version,
+      revision: document.revision,
+      records: readRecords(options.storePath, document),
+    }
     // Validate what is already on disk before the mutation runs. An operation
     // that changes nothing must still refuse a store that violates its own
-    // schema, and every operation is then allowed to build on a store that holds.
+    // schema.
     validateStoreRecords(store.records)
     const outcome = operation(store)
     // Checked without optional chaining so the compiler keeps the answer narrowed
@@ -245,7 +388,7 @@ export async function withStore<T = Record<string, unknown>>(
     if (outcome === undefined || outcome.changed !== true) {
       return { result: outcome?.result, revision: store.revision, store }
     }
-    const next = {
+    const next: MemoryStore = {
       schema_version: STORE_SCHEMA_VERSION,
       revision: store.revision + 1,
       records: outcome.records,
@@ -254,8 +397,43 @@ export async function withStore<T = Record<string, unknown>>(
     // may append, not what a valid record is, so a store written under a larger
     // cap must still load after a deployment lowers it.
     validateStoreRecords(next.records)
-    writeAtomic(options.storePath, `${JSON.stringify(next, null, 2)}\n`)
+    const recordsDir = recordsDirOf(options)
+    // Version 1 keeps text in the index, so its first write also migrates the
+    // bodies it has never had.
+    writeBodies(recordsDir, document.schema_version === 1 ? next.records : changedRecords(store.records, next.records))
+    writeAtomic(options.storePath, renderIndexDocument(next.records, next.revision))
+    cleanOrphanBodies(recordsDir, next.records)
     return { result: outcome.result, revision: next.revision, store: next }
+  })
+}
+
+/**
+ * Migrate one scope's index and views to the split layout.
+ *
+ * Version 1 keeps text in the index and generates `MEMORY.md`; both are removed
+ * here. Bodies are written before the index changes, so an interrupted run
+ * leaves a still-valid version-1 store and can be retried.
+ * @param options - store location and lock thresholds.
+ * @returns whether the store was migrated.
+ */
+export async function migrateStore(options: StoreLockOptions): Promise<{ migrated: boolean; records: number }> {
+  return withLock(options, () => {
+    const document = parseStoreDocument(options.storePath)
+    const legacyView = join(dirname(options.storePath), 'MEMORY.md')
+    if (document.schema_version === STORE_SCHEMA_VERSION) {
+      // A previous build's generated view carries no facts; removing it keeps the
+      // scope to one index and one body per record.
+      if (existsSync(legacyView)) unlinkSync(legacyView)
+      return { migrated: false, records: document.records.length }
+    }
+    const records = readRecords(options.storePath, document)
+    validateStoreRecords(records)
+    const recordsDir = recordsDirOf(options)
+    writeBodies(recordsDir, records)
+    writeAtomic(options.storePath, renderIndexDocument(records, document.revision))
+    if (existsSync(legacyView)) unlinkSync(legacyView)
+    cleanOrphanBodies(recordsDir, records)
+    return { migrated: true, records: records.length }
   })
 }
 
@@ -266,6 +444,108 @@ export async function withStore<T = Record<string, unknown>>(
  */
 export async function removeStoreDir(dir: string) {
   await rm(dir, { recursive: true, force: true })
+}
+
+/**
+ * The body directory for one store.
+ * @param options - store options, optionally carrying the directory.
+ * @returns the absolute body directory.
+ */
+function recordsDirOf(options: StoreLockOptions) {
+  return options.recordsDir ?? join(dirname(options.storePath), 'memories')
+}
+
+/**
+ * Render one index document.
+ * @param records - complete records to index.
+ * @param revision - revision the document describes.
+ * @returns the file content.
+ */
+function renderIndexDocument(records: readonly MemoryRecord[], revision: number) {
+  const document = {
+    schema_version: STORE_SCHEMA_VERSION,
+    revision,
+    records: records.map(indexRowOf),
+  }
+  return `${JSON.stringify(document, null, 2)}\n`
+}
+
+/**
+ * The index row for one record: everything except text and evidence.
+ * @param record - the complete record.
+ * @returns the index row.
+ */
+function indexRowOf(record: MemoryRecord) {
+  return {
+    id: record.id,
+    scope: record.scope,
+    category: record.category,
+    title: record.title,
+    status: record.status,
+    confidence: record.confidence,
+    project_id: record.project_id ?? null,
+    created_at: record.created_at,
+    updated_at: record.updated_at,
+    superseded_by: record.superseded_by ?? null,
+  }
+}
+
+/**
+ * Write one body file per record.
+ * @param recordsDir - the body directory.
+ * @param records - every record whose body must be written.
+ * @returns nothing.
+ */
+function writeBodies(recordsDir: string, records: readonly MemoryRecord[]): void {
+  for (const record of records) {
+    writeAtomic(join(recordsDir, `${record.id}.md`), renderRecordBody(record))
+  }
+}
+
+/**
+ * Records whose body differs from what the store already held.
+ * @param previous - records as the store held them.
+ * @param next - records the mutation produced.
+ * @returns records that need their body rewritten.
+ */
+function changedRecords(previous: readonly MemoryRecord[], next: readonly MemoryRecord[]): MemoryRecord[] {
+  const before = new Map(previous.map((record: MemoryRecord) => [record.id, record]))
+  return next.filter((record: MemoryRecord) => {
+    const previousRecord = before.get(record.id)
+    return previousRecord === undefined
+      || previousRecord.content !== record.content
+      || JSON.stringify(previousRecord.evidence) !== JSON.stringify(record.evidence)
+  })
+}
+
+/**
+ * Remove body files the index does not name.
+ * @param recordsDir - the body directory.
+ * @param records - the records the index now holds.
+ * @returns nothing.
+ */
+function cleanOrphanBodies(recordsDir: string, records: readonly MemoryRecord[]): void {
+  if (!existsSync(recordsDir)) return
+  const keep = new Set(records.map((record: MemoryRecord) => `${record.id}.md`))
+  try {
+    for (const name of readdirSync(recordsDir)) {
+      if (!name.endsWith('.md') || keep.has(name)) continue
+      const id = name.slice(0, -3)
+      if (!isMemoryId(id)) continue
+      unlinkSync(join(recordsDir, name))
+    }
+  } catch {
+    // Cleaning is best effort; the next write tries again.
+  }
+}
+
+/**
+ * Collapse one text to a single line.
+ * @param text - the text to flatten.
+ * @returns the text with every whitespace run replaced by one space.
+ */
+function singleLine(text: string): string {
+  return text.replace(/\s+/gu, ' ').trim()
 }
 
 /**

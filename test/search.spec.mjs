@@ -32,6 +32,7 @@ const record = (overrides = {}) => ({
   scope: 'user',
   project_id: null,
   category: 'state',
+  title: 'a fact',
   content: 'a fact',
   confidence: 1,
   evidence: [],

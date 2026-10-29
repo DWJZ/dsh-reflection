@@ -8,7 +8,7 @@
  *
  * Usage: `node test/commands.spec.mjs`.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -70,6 +70,7 @@ const record = (overrides = {}) => ({
   scope: 'user',
   project_id: null,
   category: 'state',
+  title: 'a fact',
   content: 'a fact',
   confidence: 1,
   evidence: [],
@@ -99,6 +100,12 @@ const run = (ctx, rawInput, agent) => ctx.registrations.commands[0].handler({ ra
 
 /** The text of one command result. */
 const textOf = result => String(result.text ?? '')
+
+/** Every record body of the user scope, concatenated for content assertions. */
+const userMemoryText = () => {
+  const dir = userLayout(MEMORY).recordsDir
+  return readdirSync(dir).map(name => readFileSync(join(dir, name), 'utf8')).join('\n')
+}
 
 // Seed the user scope with two records.
 const userScope = userLayout(MEMORY)
@@ -216,13 +223,13 @@ console.log('archive and forget')
 const archived = await run(ctx, `archive ${langRecord.id}`, agent)
 check('archive succeeds', archived.kind === 'success')
 check('the record becomes archived', readStore(userScope.storePath).records.find(r => r.id === langRecord.id).status === 'archived')
-check('the index drops it', !readFileSync(userScope.viewPath, 'utf8').includes('用户偏好中文解释'))
+check('the archived body is kept', userMemoryText().includes('用户偏好中文解释'))
 check('archiving twice is a conflict', (await run(ctx, `archive ${langRecord.id}`, agent)).kind === 'error')
 
 const forgotten = await run(ctx, `forget ${pnpmRecord.id}`, agent)
 check('forget succeeds', forgotten.kind === 'success')
 check('the record is gone', !readStore(userScope.storePath).records.some(r => r.id === pnpmRecord.id))
-check('the view no longer holds it', !readFileSync(userScope.viewPath, 'utf8').includes('用户偏好 pnpm'))
+check('the view no longer holds it', !userMemoryText().includes('用户偏好 pnpm'))
 check('a tombstone records the deletion',
   readFileSync(tombstoneLayout(MEMORY).path, 'utf8').includes('"op":"forget"'))
 check('the tombstone carries no content',

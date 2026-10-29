@@ -28,8 +28,7 @@
 import { resolveConfig } from './config.js'
 import { projectLayout, registryLayout, tombstoneLayout, userLayout, consolidationLayout } from './paths.js'
 import { readRegistry, resolveProject } from './registry.js'
-import { cleanupStaleTemps, readStore } from './jsonstore.js'
-import { rebuildView } from './views.js'
+import { cleanupStaleTemps, migrateStore, readStore } from './jsonstore.js'
 import { buildProvenance, createTurnTracker, registerMemorySummary, registerMemoryPolicy } from './inject.js'
 import { registerMemoryTools } from './tools.js'
 import { registerMemoryCommands } from './commands.js'
@@ -353,7 +352,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
       }, 'dsh-reflection.registrations')
 
       if (enabled) mountRuntime()
-      void refreshViewsOnMount(deps)
+      void migrateScopesOnMount(deps)
     },
 
     /**
@@ -429,22 +428,22 @@ function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
       ...updatedAt === '' ? {} : { updatedAt },
     },
     paths: {
-      user: deps.scopes.user.viewPath,
-      ...projectLayout === undefined ? {} : { project: projectLayout.viewPath },
+      user: deps.scopes.user.storePath,
+      ...projectLayout === undefined ? {} : { project: projectLayout.storePath },
     },
     budgetBytes: deps.config.summaryBudgetBytes,
   })
 }
 
 /**
- * Regenerate every scope's generated view and sweep stale temporary files.
+ * Migrate every known scope to the split store and sweep stale temporary files.
  *
- * Views are derived, so a failure here is reported and ignored: the canonical
- * store is already durable.
+ * A version-1 store still reads, so a failed migration is reported and retried
+ * on the next mount rather than blocking the plugin.
  * @param deps - resolved settings and layouts.
- * @returns fulfillment once the refresh is settled.
+ * @returns fulfillment once every scope has been visited.
  */
-async function refreshViewsOnMount(deps: MemoryDeps) {
+async function migrateScopesOnMount(deps: MemoryDeps) {
   const { lockTimeoutMs, staleLockMs, logger } = deps.config
   try {
     // A reaper never holds anything for long, so a temporary file is abandoned
@@ -465,9 +464,9 @@ async function refreshViewsOnMount(deps: MemoryDeps) {
   }
   for (const layout of layouts) {
     try {
-      await rebuildView({ ...layout, lockTimeoutMs, staleLockMs, logger })
+      await migrateStore({ storePath: layout.storePath, lockPath: layout.lockPath, recordsDir: layout.recordsDir, lockTimeoutMs, staleLockMs, logger })
     } catch (failure) {
-      logger?.warn(`dsh-reflection: memory-view-stale: ${layout.viewPath}: ${describeFailure(failure)}`)
+      logger?.warn(`dsh-reflection: memory-migration: ${layout.storePath}: ${describeFailure(failure)}`)
     }
   }
 }

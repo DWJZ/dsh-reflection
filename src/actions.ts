@@ -20,9 +20,8 @@ import { dirname } from 'node:path'
 import { readStore, withStore } from './jsonstore.js'
 import type { StoreMutation } from './jsonstore.js'
 import { withLock } from './lock.js'
-import { mutateAndRefreshView } from './views.js'
 import { findSecretIn } from './redact.js'
-import { MAX_CONTENT_CHARS, charLength, newMemoryId, normalizeContent, validateMemory } from './schema.js'
+import { MAX_CONTENT_CHARS, charLength, deriveTitle, newMemoryId, normalizeContent, validateMemory } from './schema.js'
 import type { ActionInput, ActionOptions, AddInput, ArchiveInput, EvidenceEntry, MemoryRecord, MemoryScope, MemoryStore, RecordTarget, ScopeInput, ScopeLayout, TargetedInput, TombstoneEntry } from './types/memory.js'
 import { failureMessage } from './errors.js'
 
@@ -95,6 +94,7 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
       scope: input.scope,
       project_id: input.scope === 'project' ? input.projectId : null,
       category: input.category,
+      title: input.title === undefined ? deriveTitle(content) : requireTitle(input.title),
       content,
       confidence: requireConfidence(input.confidence, PHASE1_CONFIDENCE),
       evidence: input.evidence === undefined ? [] : [input.evidence],
@@ -129,6 +129,7 @@ export async function updateMemory(options: ActionOptions, input: TargetedInput)
     const evidence = accumulate(current.evidence, input.evidence, options.maxEvidencePerMemory)
     const record = {
       ...current,
+      title: input.title === undefined ? deriveTitle(content) : requireTitle(input.title),
       content,
       evidence,
       confidence: requireConfidence(input.confidence, EXPLICIT_UPDATE_CONFIDENCE),
@@ -167,6 +168,7 @@ export async function supersedeMemory(options: ActionOptions, input: TargetedInp
       scope: current.scope,
       project_id: current.project_id,
       category: current.category,
+      title: input.title === undefined ? deriveTitle(content) : requireTitle(input.title),
       content,
       confidence: requireConfidence(input.confidence, PHASE1_CONFIDENCE),
       evidence: input.evidence === undefined ? [] : [input.evidence],
@@ -425,18 +427,18 @@ function accumulate(
  * @param options - scopes, thresholds, and logger.
  * @param layout - the target scope's layout.
  * @param operation - receives the latest store, returns `{ result, changed, records }`.
- * @returns the operation's result plus the committed revision and view state.
+ * @returns the operation's result plus the committed revision.
  */
 async function apply<T = Record<string, unknown>>(
   options: ActionOptions,
   layout: ScopeLayout,
   operation: (store: MemoryStore) => StoreMutation<T> | undefined,
-): Promise<T & { revision: number; viewStale: boolean }> {
-  const outcome = await mutateAndRefreshView(scopeOptions(options, layout), operation)
+): Promise<T & { revision: number }> {
+  const outcome = await withStore(scopeOptions(options, layout), operation)
   // A mutation that changed nothing carries no result. The empty case contributes
   // no fields, which is what spreading `undefined` did before the type said so.
   const result = (outcome.result ?? {}) as T
-  return { ...result, revision: outcome.revision, viewStale: outcome.viewStale }
+  return { ...result, revision: outcome.revision }
 }
 
 /**
@@ -512,6 +514,12 @@ function scopeOptions(options: ActionOptions, layout: ScopeLayout) {
  * @returns the normalized content.
  * @throws when the content is unusable.
  */
+function requireTitle(title: string): string {
+  const normalized = normalizeContent(title)
+  if (normalized === '') throw new Error('dsh-reflection: title must not be empty')
+  return normalized
+}
+
 function requireContent(content: string | undefined): string {
   const normalized = normalizeContent(content ?? '')
   if (normalized === '') throw new Error('dsh-reflection: content must not be empty')

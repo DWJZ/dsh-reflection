@@ -109,7 +109,7 @@ check('the index is assembled on demand, not frozen at mount', typeof indexEntry
 const rendered = indexEntry.text({ agent: agentStub() })
 check('the summary is an envelope', rendered.includes('<memory-summary>') && rendered.includes('</memory-summary>'))
 check('the summary counts the scope', rendered.includes('1 user'))
-check('the summary points at the index file', rendered.includes('MEMORY.md'))
+check('the summary points at the index file', rendered.includes('memories.json'))
 check('the summary does not carry the fact itself', !rendered.includes('用户偏好中文解释'))
 check('a bare assemble renders nothing', indexEntry.text({}) === '')
 // The assembled text is what a long conversation relies on: every request re-runs

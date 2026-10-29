@@ -294,7 +294,7 @@ check('the model request carries the Memory summary', projectARequest.includes('
 check('the summary does not inline the remembered fact', !summaryTextOf(projectARequest).includes('该项目使用 pnpm'))
 const projectAIdForSummary = projectIdFor(PROJECT_A)
 check('the summary points at the project index file', projectAIdForSummary !== undefined
-  && projectARequest.includes(`projects/${projectAIdForSummary}/MEMORY.md`))
+  && projectARequest.includes(`projects/${projectAIdForSummary}/memories.json`))
 check('the summary carries the model-written text', projectARequest.includes('已记录用户的编码偏好'))
 
 console.log('27.5 a driven consolidation learns from a finished turn')
@@ -358,9 +358,9 @@ const learnedLayout = learnedSummaryProject === undefined
 const learnedRequest = requestText(afterLearning.log)
 check('the later Session carries a Memory summary', learnedRequest.includes('<memory-summary>'))
 check('the summary points at the project index file', learnedSummaryProject !== undefined
-  && learnedRequest.includes(`projects/${learnedSummaryProject}/MEMORY.md`))
-check('the learned fact reached the file the summary points at',
-  learnedLayout !== undefined && readFileSync(learnedLayout.viewPath, 'utf8').includes('该项目使用 pnpm 管理依赖'))
+  && learnedRequest.includes(`projects/${learnedSummaryProject}/memories.json`))
+check('the learned fact reached the store the summary points at',
+  learnedLayout !== undefined && readStore(learnedLayout.storePath).records.some(record => record.status === 'active' && record.content.includes('该项目使用 pnpm 管理依赖')))
 check('the learned fact has its own record file',
   learnedLayout !== undefined && existsSync(learnedLayout.recordsDir)
   && readdirSync(learnedLayout.recordsDir).some(name => name.endsWith('.md')))
@@ -389,15 +389,15 @@ check('the second project Session runs', projectBSession.code === 0, projectBSes
 const projectBRequest = requestText(projectBSession.log)
 const projectBId = projectIdFor(PROJECT_B)
 check('the second project sees its own scope', projectBId !== undefined
-  && projectBRequest.includes(`projects/${projectBId}/MEMORY.md`))
+  && projectBRequest.includes(`projects/${projectBId}/memories.json`))
 // The assertion is about the injected summary, not about the whole request: a
 // request also carries tool-call arguments, and those legitimately quote what the
 // user said in that project.
-const projectAScope = `projects/${String(projectIdFor(PROJECT_A))}/MEMORY.md`
+const projectAScope = `projects/${String(projectIdFor(PROJECT_A))}/memories.json`
 check('the second project does not see the first project\'s scope',
   !summaryTextOf(projectBRequest).includes(projectAScope))
 check('user Memory is visible from the second project',
-  summaryTextOf(projectBRequest).includes('/user/MEMORY.md'))
+  summaryTextOf(projectBRequest).includes('/user/memories.json'))
 
 console.log('27.4 an explicit supersede retires the record it replaces')
 const targetWrite = await runSession({

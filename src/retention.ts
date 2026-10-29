@@ -1,7 +1,7 @@
 /**
  * What one scope's records are, and in which order they are listed.
  *
- * Summary counts, the `MEMORY.md` index, and every reader that walks active
+ * Summary counts, the index, and every reader that walks active
  * Memory order records here, so a human reading a file and a model reading a
  * count never disagree about which records exist or how they sort.
  *

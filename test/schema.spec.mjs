@@ -41,6 +41,7 @@ const record = (overrides = {}) => ({
   scope: 'project',
   project_id: schema.newProjectId(),
   category: 'state',
+  title: '该项目使用 pnpm',
   content: '该项目使用 pnpm',
   confidence: 1.0,
   evidence: [evidence()],
@@ -92,6 +93,10 @@ check('a project record without project_id is rejected',
   rejects(record({ project_id: null }), 'project_id'))
 check('a user record carrying a project_id is rejected',
   rejects(record({ scope: 'user', project_id: schema.newProjectId() }), 'project_id'))
+check('a missing title is rejected', rejects(record({ title: undefined }), 'title'))
+check('an empty title is rejected', rejects(record({ title: '   ' }), 'title'))
+check('a multi-line title is rejected', rejects(record({ title: 'first\nsecond' }), 'title'))
+check('a long title is accepted', !rejects(record({ title: '长'.repeat(1000) })))
 check('an empty content is rejected', rejects(record({ content: '   ' }), 'content'))
 check('multi-line content is rejected', rejects(record({ content: 'first\nsecond' }), 'content'))
 check('content over 500 code points is rejected',

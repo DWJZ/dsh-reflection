@@ -34,6 +34,7 @@ const ACTIVE = [{
   scope: 'project',
   project_id: 'proj_a',
   category: 'state',
+  title: 'The project uses npm.',
   content: 'The project uses npm.',
   status: 'active',
 }]

@@ -40,6 +40,11 @@ export interface MemoryRecord {
   id: string
   scope: MemoryScope
   category: MemoryCategory
+  /**
+   * One-line title used by the index and the summary. The detail lives in
+   * `content`; a reader scans titles before deciding to read a record.
+   */
+  title: string
   status: string
   content: string
   confidence: number
@@ -62,7 +67,6 @@ export interface ScopeLayout {
   dir: string
   storePath: string
   lockPath: string
-  viewPath: string
   /** Directory holding one Markdown file per active record. */
   recordsDir: string
   /** Model-written summary cache, regenerated when the store revision moves. */
@@ -108,6 +112,8 @@ export interface ActionOptions {
 export interface AddInput {
   /** The fact to store. */
   content: string
+  /** One-line title; derived from the content when omitted. */
+  title?: string | undefined
   /** Which store it belongs to. */
   scope: MemoryScope
   /** What kind of record it is. */
@@ -124,6 +130,8 @@ export interface AddInput {
 export interface TargetedInput extends RecordTarget {
   /** The content that replaces it. */
   content: string
+  /** One-line title; derived from the content when omitted. */
+  title?: string | undefined
   /** The citation to accumulate. Its quote is redacted before it is stored. */
   evidence?: EvidenceEntry | undefined
   /** Automatic writes state their reviewed confidence; explicit ones do not. */

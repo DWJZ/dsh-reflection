@@ -67,8 +67,11 @@ const recordsOf = projectId => readStore(projectLayout(MEMORY, projectId).storeP
 /** One stored record. */
 const recordOf = (projectId, id) => recordsOf(projectId).find(record => record.id === id)
 
-/** The generated view of one project. */
-const viewOf = projectId => readFileSync(projectLayout(MEMORY, projectId).viewPath, 'utf8')
+/** Every record body of one project, concatenated for content assertions. */
+const viewOf = projectId => {
+  const dir = projectLayout(MEMORY, projectId).recordsDir
+  return readdirSync(dir).map(name => readFileSync(join(dir, name), 'utf8')).join('\n')
+}
 
 /** Every tombstone written so far. */
 const tombstones = () => {
@@ -233,7 +236,7 @@ check('the old record keeps its timestamps', retired.created_at === before.creat
 check('exactly one active record carries the fact',
   recordsOf(PROJECT_A).filter(record => record.status === 'active' && record.content.includes('包管理器')).length === 1)
 check('the index shows the new fact', viewOf(PROJECT_A).includes('该项目使用 pnpm 作为包管理器'))
-check('the index hides the retired fact', !viewOf(PROJECT_A).includes('该项目已迁移到 pnpm (3)'))
+check('the index hides the retired fact', !recordsOf(PROJECT_A).some(record => record.status === 'active' && record.content.includes('该项目已迁移到 pnpm (3)')))
 
 console.log('supersede_target_scope_inherited and supersede_target_category_inherited')
 check('scope is inherited from the target', replacement.scope === retired.scope)
@@ -298,7 +301,7 @@ const archived = await actions.archiveMemory(clocked(107000), { id: superseded.i
 check('the action is archived', archived.action === 'archived')
 check('the status is archived', recordOf(PROJECT_A, superseded.id).status === 'archived')
 check('the record stays in the canonical store', recordOf(PROJECT_A, superseded.id) !== undefined)
-check('the index drops it', !viewOf(PROJECT_A).includes('包管理器'))
+check('the index drops it', !recordsOf(PROJECT_A).some(record => record.status === 'active' && record.content.includes('包管理器')))
 check('archiving twice is a conflict',
   await rejects(() => actions.archiveMemory(clocked(108000), { id: superseded.id, projectId: PROJECT_A }), 'cannot be modified'))
 
@@ -320,7 +323,7 @@ const cleared = await actions.clearScope(clocked(113000), { scope: 'project', pr
 check('the action is cleared', cleared.action === 'cleared')
 check('the count is reported', cleared.count === 2)
 check('the store is empty', recordsOf(PROJECT_B).length === 0)
-check('the view is empty too', viewOf(PROJECT_B).includes('No active Memory.'))
+check('the view is empty too', viewOf(PROJECT_B) === '')
 check('clearing an empty scope is a no-op',
   (await actions.clearScope(clocked(114000), { scope: 'project', projectId: PROJECT_B })).action === 'noop')
 
