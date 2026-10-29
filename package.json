@@ -26,8 +26,7 @@
     "typecheck:client": "tsc -p tsconfig.client.json",
     "eval:retrieval": "node --import tsx/esm eval/run-retrieval.mjs",
     "eval:behavior": "node --import tsx/esm eval/run-behavior.mjs",
-    "eval:check": "node --import tsx/esm eval/run-behavior.mjs --check",
-    "check:summaries": "node scripts/check-summary-budget.mjs"
+    "eval:check": "node --import tsx/esm eval/run-behavior.mjs --check"
   },
   "exports": {
     ".": "./lib/index.mjs",

@@ -104,11 +104,21 @@ export function createSummaryService(options: SummaryServiceOptions) {
       const size = Buffer.byteLength(answer.text.trim(), 'utf8')
       answer = await call(`${prompt}\n\nYour previous answer was ${String(size)} bytes; the hard content limit is ${String(contentBudget)} bytes. Rewrite it shorter, keeping the same facts.`)
     }
-    let content = answer.text.trim()
-    if (Buffer.byteLength(content, 'utf8') > contentBudget) {
-      content = truncateBytes(content, contentBudget)
+    /**
+     * Fit one generated summary to the content budget.
+     *
+     * Runs immediately after the model call(s), before anything is cached: an
+     * answer that stayed over the budget is truncated and warned about, so a
+     * document the injection would cut is never stored whole.
+     * @param content - the generated content.
+     * @returns content at or under the budget.
+     */
+    const fitToBudget = (content: string): string => {
+      if (Buffer.byteLength(content, 'utf8') <= contentBudget) return content
       options.logger?.warn?.(`dsh-reflection: summary at ${layout.summaryPath} stayed over ${String(contentBudget)} bytes after ${String(attempts)} attempt(s); truncated`)
+      return truncateBytes(content, contentBudget)
     }
+    const content = fitToBudget(answer.text.trim())
     writeSummaryDocument(layout.summaryPath, {
       content,
       revision: store.revision,

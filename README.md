@@ -86,8 +86,8 @@ The cache is JSON: `{ revision, generated_at, model, budget, content }`. Only
 truncated. The model is asked for the content budget (the injection budget minus
 the fixed envelope allowance); an answer over it is regenerated, and one that
 never fits after the attempt cap is truncated, with a warning, before caching.
-`npm run check:summaries` verifies the files on disk; it exits non-zero when a
-cached content is over the budget.
+The check runs inside the refresh, immediately after generation; there is no
+separate command to forget.
 
 The fixed part of the envelope — the counts, the index paths, and the pointer to
 per-record files — is what makes the summary actionable, so it is never dropped

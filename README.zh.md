@@ -70,7 +70,7 @@ the index lists every record by title and id; each record has its own file under
 缓存是 JSON：`{ revision, generated_at, model, budget, content }`。只有
 `content` 受预算约束，metadata 是来源信息、不会被截断。提示词给模型的是正文预算
 （注入预算减去固定信封预留）；超出会重新生成，重试到上限仍超出则截断并记 warning，
-然后才写缓存。`npm run check:summaries` 检查磁盘上的缓存，正文超预算时以非零码退出。
+然后才写缓存。检查就在每次生成之后、写缓存之前执行，不依赖外部命令。
 
 envelope 的固定部分 —— 计数、文件路径、指向单条文件的说明 —— 是让摘要可用的前提，所以永远不会为了腾地方而裁掉：超预算时裁的是模型写的那段，连固定部分都放不下时整个不注入。
 
