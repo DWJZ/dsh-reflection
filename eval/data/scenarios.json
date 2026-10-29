@@ -50,14 +50,14 @@
         {
           "session": {
             "project": "alpha",
-            "task": "记住：我偏好中文回答，并且每次回答开头加一行 TL;DR-{{run}}。"
+            "task": "记住：我偏好中文回答，并且每次回答开头加一行 START-{{run}}。"
           }
         },
         {
           "assertStore": {
             "scope": "user",
             "contains": [
-              "TL;DR-{{run}}"
+              "START-{{run}}"
             ]
           }
         },
@@ -68,7 +68,7 @@
           },
           "expect": {
             "all": [
-              "TL;DR-{{run}}"
+              "START-{{run}}"
             ]
           }
         }
