@@ -241,6 +241,11 @@ function checkAnswer(answer, expect) {
   for (const needle of expect.all ?? []) {
     if (!text.includes(needle.toLowerCase())) return fail(`missing ${JSON.stringify(needle)} in ${JSON.stringify(answer.slice(0, 200))}`)
   }
+  if (expect.any !== undefined) {
+    if (!expect.any.some(pattern => new RegExp(pattern, 'iu').test(answer))) {
+      return fail(`none of ${JSON.stringify(expect.any)} appears in ${JSON.stringify(answer.slice(0, 200))}`)
+    }
+  }
   for (const pattern of expect.none ?? []) {
     if (new RegExp(pattern, 'iu').test(answer)) return fail(`forbidden ${JSON.stringify(pattern)} in ${JSON.stringify(answer.slice(0, 200))}`)
   }
@@ -256,7 +261,7 @@ function checkAnswer(answer, expect) {
  * @param options - harness home, scope, project, expected substrings.
  * @returns the check result.
  */
-function checkStore({ home, scope, project, projectId, contains, excludes, excludesExact }) {
+function checkStore({ home, scope, project, projectId, contains, any, excludes, excludesExact }) {
   const storePath = scope === 'user' ? userLayout(join(home, 'memory')).storePath : projectLayout(join(home, 'memory'), projectId(project)).storePath
   const records = readStore(storePath).records.filter(record => record.status === 'active')
   const where = `store ${scope}${project === undefined ? '' : `/${project}`}`
@@ -264,6 +269,10 @@ function checkStore({ home, scope, project, projectId, contains, excludes, exclu
     if (!records.some(record => record.content.includes(needle))) {
       return fail(`${where} has no active record containing ${JSON.stringify(needle)}`)
     }
+  }
+  if (any !== undefined) {
+    const matched = records.some(record => any.some(pattern => new RegExp(pattern, 'iu').test(record.content)))
+    if (!matched) return fail(`${where} has no active record matching any of ${JSON.stringify(any)}`)
   }
   for (const pattern of excludes ?? []) {
     const hit = records.find(record => new RegExp(pattern, 'iu').test(record.content))

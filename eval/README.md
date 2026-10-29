@@ -54,8 +54,9 @@ The ten scenarios:
 
 `consolidation-write` drives `/memory consolidate` through the shipped driver fixture, because the plugin's own debounce cannot fire inside a one-shot run.
 
-Scoring is rule-based, not judged: `all` (every string must appear), `none`
-(regexes that must not), `abstain` (the answer must decline). That keeps V1
+Scoring is rule-based, not judged: `all` (every string must appear), `any` (at
+least one regex must appear), `none` (regexes that must not), `abstain` (the
+answer must decline). That keeps V1
 cheap and reproducible; an LLM judge is a later layer, not a prerequisite.
 
 ### The control run
