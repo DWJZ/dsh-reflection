@@ -86,6 +86,9 @@ jobs:
           fetch-depth: 1
 
       - uses: pnpm/action-setup@v4
+        with:
+          # The harness's own packageManager field; this repository has none.
+          version: 11.28.5
 
       - uses: actions/setup-node@v4
         with:
