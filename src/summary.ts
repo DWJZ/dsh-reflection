@@ -15,7 +15,8 @@
  * @module dsh-reflection/summary
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { writeAtomic } from './jsonstore.js'
 import { CATEGORY_PRIORITY } from './retention.js'
 import type { MemoryRecord } from './types/memory.js'
@@ -50,63 +51,64 @@ const RECORD_CHARS_IN_PROMPT = 400
 /** Largest total record text offered to the summary model, in bytes. */
 const PROMPT_BUDGET_BYTES = 24_000
 
-/** One cached summary, as `summary.md` stores it. */
+/** One cached summary, as `summary.json` stores it. */
 export interface CachedSummary {
-  /** The model's text. */
-  text: string
+  /** The model's text; the only field a budget truncation applies to. */
+  content: string
   /** Store revision the summary describes. */
   revision: number
   /** When it was generated, ISO-8601. */
   generated_at: string
   /** Provider and model that wrote it, when known. */
   model?: string | undefined
-  /** Injection budget it was written for; a different budget makes it stale. */
+  /** Injection budget the cache was written for; a different budget makes it stale. */
   budget?: number | undefined
 }
 
 /**
- * Render one cached summary as its file.
+ * Render one cached summary as its JSON file.
+ *
+ * Metadata and content are separate fields: a budget truncates the content, not
+ * the provenance.
  * @param entry - the summary and its provenance.
  * @returns the complete file content.
  */
 export function renderSummaryDocument(entry: CachedSummary) {
-  const lines = [
-    '---',
-    `revision: ${String(entry.revision)}`,
-    `generated_at: ${entry.generated_at}`,
-  ]
-  if (entry.model !== undefined) lines.push(`model: ${entry.model}`)
-  if (entry.budget !== undefined) lines.push(`budget: ${String(entry.budget)}`)
-  lines.push('---', '', entry.text.trim(), '')
-  return lines.join('\n')
+  const document: Record<string, unknown> = {
+    revision: entry.revision,
+    generated_at: entry.generated_at,
+    content: entry.content.trim(),
+  }
+  if (entry.model !== undefined) document.model = entry.model
+  if (entry.budget !== undefined) document.budget = entry.budget
+  return `${JSON.stringify(document, null, 2)}\n`
 }
 
 /**
- * Read one `summary.md`.
+ * Parse one `summary.json`.
  * @param text - the file content.
  * @returns the parsed summary, or undefined when the file is malformed.
  */
 export function parseSummaryDocument(text: string): CachedSummary | undefined {
-  if (!text.startsWith('---\n')) return undefined
-  const end = text.indexOf('\n---', 4)
-  if (end < 0) return undefined
-  const header = text.slice(4, end).split('\n')
-  const fields: Record<string, string> = {}
-  for (const line of header) {
-    const at = line.indexOf(':')
-    if (at <= 0) continue
-    fields[line.slice(0, at).trim()] = line.slice(at + 1).trim()
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return undefined
   }
-  const revision = Number(fields.revision)
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
+  const revision = Number(parsed.revision)
+  const content = parsed.content
+  const generatedAt = parsed.generated_at
   if (!Number.isInteger(revision) || revision < 0) return undefined
-  const body = text.slice(end + 4).trim()
-  if (body === '') return undefined
-  const budget = Number(fields.budget)
+  if (typeof content !== 'string' || content.trim() === '') return undefined
+  if (typeof generatedAt !== 'string' || generatedAt === '') return undefined
+  const budget = Number(parsed.budget)
   return {
-    text: body,
+    content: content.trim(),
     revision,
-    generated_at: fields.generated_at ?? '',
-    ...fields.model === undefined ? {} : { model: fields.model },
+    generated_at: generatedAt,
+    ...typeof parsed.model === 'string' && parsed.model !== '' ? { model: parsed.model } : {},
     ...Number.isInteger(budget) && budget > 0 ? { budget } : {},
   }
 }
@@ -124,13 +126,13 @@ export function parseSummaryDocument(text: string): CachedSummary | undefined {
 export function summaryIsStale(cached: CachedSummary | undefined, revision: number, budget: number): boolean {
   return cached === undefined
     || cached.revision !== revision
-    || cached.text.trim() === ''
+    || cached.content.trim() === ''
     || cached.budget !== budget
 }
 
 /**
  * Read one scope's cached summary.
- * @param path - absolute path of `summary.md`.
+ * @param path - absolute path of `summary.json`.
  * @returns the summary, or undefined when the file is absent or malformed.
  */
 export function readSummaryDocument(path: string): CachedSummary | undefined {
@@ -146,12 +148,21 @@ export function readSummaryDocument(path: string): CachedSummary | undefined {
 
 /**
  * Write one scope's cached summary.
- * @param path - absolute path of `summary.md`.
+ * @param path - absolute path of `summary.json`.
  * @param entry - the summary and its provenance.
  * @returns nothing.
  */
 export function writeSummaryDocument(path: string, entry: CachedSummary): void {
   writeAtomic(path, renderSummaryDocument(entry))
+  // The markdown-era cache is never read; removing it keeps one summary per scope.
+  const legacy = join(dirname(path), 'summary.md')
+  if (existsSync(legacy)) {
+    try {
+      unlinkSync(legacy)
+    } catch {
+      // A failed cleanup is harmless: the legacy file is not read.
+    }
+  }
 }
 
 /**
@@ -263,7 +274,7 @@ export function renderMemorySummary(input: {
  * @param limit - the largest accepted size, in bytes.
  * @returns the cut text, with an ellipsis when anything was dropped.
  */
-function truncateBytes(text: string, limit: number): string {
+export function truncateBytes(text: string, limit: number): string {
   if (limit <= 0) return ''
   if (Buffer.byteLength(text, 'utf8') <= limit) return text
   let used = 0

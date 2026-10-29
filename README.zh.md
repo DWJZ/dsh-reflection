@@ -41,11 +41,11 @@ $DSH_HOME/memory/
 ├── user/
 │   ├── memories.json    # 索引：元数据 + title，每条一行
 │   ├── memories/<id>.md # 正文 + evidence（唯一一份）
-│   └── summary.md       # 模型写的摘要缓存
+│   └── summary.json     # 模型写的摘要缓存（JSON）
 ├── projects/<project_id>/
 │   ├── memories.json
 │   ├── memories/<id>.md
-│   └── summary.md
+│   └── summary.json
 └── tombstones.jsonl     # body-free record of deletions
 ```
 
@@ -65,7 +65,12 @@ the index lists every record by title and id; each record has its own file under
 </memory-summary>
 ```
 
-摘要正文由模型写：每次写入后（以及 consolidation 之后的下一次读取时）会让会话自己的模型描述 Memory 里有什么，答案缓存在记录旁的 `summary.md`。写入会等待这次刷新，所以摘要不会描述刚返回的那次调用之前的状态；注入只读缓存，自己从不调用模型。
+摘要正文由模型写：每次写入后（以及 consolidation 之后的下一次读取时）会让会话自己的模型描述 Memory 里有什么，答案缓存在记录旁的 `summary.json`。写入会等待这次刷新，所以摘要不会描述刚返回的那次调用之前的状态；注入只读缓存，自己从不调用模型。
+
+缓存是 JSON：`{ revision, generated_at, model, budget, content }`。只有
+`content` 受预算约束，metadata 是来源信息、不会被截断。提示词给模型的是正文预算
+（注入预算减去固定信封预留）；超出会重新生成，重试到上限仍超出则截断并记 warning，
+然后才写缓存。`npm run check:summaries` 检查磁盘上的缓存，正文超预算时以非零码退出。
 
 envelope 的固定部分 —— 计数、文件路径、指向单条文件的说明 —— 是让摘要可用的前提，所以永远不会为了腾地方而裁掉：超预算时裁的是模型写的那段，连固定部分都放不下时整个不注入。
 
@@ -157,7 +162,7 @@ envelope 的固定部分 —— 计数、文件路径、指向单条文件的说
 
 - **写者串行化。** 每次 mutation 都经过进程内链与独占锁文件，重新读取 canonical，并针对读到的那一版做校验 —— 因此共用同一个 harness home 的桌面会话与 headless 运行不会互相丢失写入。崩溃进程留下的锁，只有在其记录的 pid 确实不存在（`ESRCH`）时才会被回收；`EPERM` 说明进程活着，锁保留。回收动作本身也被串行化：两个进程同时判定同一个锁过期时，慢的那个否则会删掉快的那个刚建立的锁。
 - **读进来的东西要校验。** `memories.json` 与 `registry.json` 在写入前和读入时都会校验 —— id、时间戳、唯一性，以及每一条 supersession 引用。手改过的文档会直接报错，而不是流进 index、view 或模型请求；project id 在变成目录名之前也要先通过检查。canonical store 读不出来时会**中断本轮请求并指名出问题的文件**：降级成空索引等于把"store 坏了"呈现为"agent 单纯忘了"，后者更难诊断。文件不存在不算损坏 —— 那正是首次使用时的形态。
-- **摘要缓存，不在请求路径上重算。** 注入发生在每个模型 step 之前，所以它只读 `summary.md`；写它的模型调用发生在写入时或下一次读取的背后，永远不在请求路径上。描述旧 revision 的缓存仍会被使用 —— 稍微过时的摘要胜过没有摘要 —— 同时后台刷新会追上。
+- **摘要缓存，不在请求路径上重算。** 注入发生在每个模型 step 之前，所以它只读 `summary.json`；写它的模型调用发生在写入时或下一次读取的背后，永远不在请求路径上。描述旧 revision 的缓存仍会被使用 —— 稍微过时的摘要胜过没有摘要 —— 同时后台刷新会追上。
 - **索引是提交点。** mutation 先写正文、再写索引；只有索引写成功才算提交。索引里没有的正文文件会在下一次写入时删掉。正文是它自己那份文本的唯一副本，所以正文缺失会直接中断读取，并指名记录与路径。
 - **title 先读，正文后读。** 每条记录在索引里带一行 title，读的人先扫 title 再决定是否打开正文。手写的 title 不设长度上限；字段出现之前的旧记录在读取时派生一个 title。
 - **Provenance 是构造出来的，不是接受的。** 模型只给出事实；插件自己附上 Session、本轮的人类消息及其序号。无法确定时留空，而不是猜一个。

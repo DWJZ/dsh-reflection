@@ -12,12 +12,22 @@
  */
 
 import { readStore } from './jsonstore.js'
-import { SUMMARY_SYSTEM_PROMPT, buildSummaryPrompt, readSummaryDocument, summaryIsStale, writeSummaryDocument } from './summary.js'
+import { SUMMARY_SYSTEM_PROMPT, buildSummaryPrompt, readSummaryDocument, summaryIsStale, truncateBytes, writeSummaryDocument } from './summary.js'
 import { streamModelText } from './consolidation/model.js'
 import { failureMessage } from './errors.js'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ProjectEntry } from './types/identity.js'
 import type { MemoryRecord, ScopeLayout } from './types/memory.js'
+
+/**
+ * Bytes the fixed envelope needs for counts, index paths and the pointer. The
+ * model writes only the content, so its budget is the configured injection
+ * budget minus this allowance.
+ */
+const ENVELOPE_ALLOWANCE_BYTES = 600
+
+/** How many times to ask for a shorter summary before truncating. */
+const SUMMARY_ATTEMPTS = 3
 
 /** What one summary service is given. */
 export interface SummaryServiceOptions {
@@ -71,20 +81,36 @@ export function createSummaryService(options: SummaryServiceOptions) {
     const session = agent?.session
     const sessionId = session?.id
     if (typeof sessionId !== 'string' || sessionId === '') return
-    const answer = await streamModelText(llm, {
+    // The budget bounds the content the agent sees; the envelope's fixed part is
+    // reserved separately so the model is not asked to spend it.
+    const contentBudget = Math.max(200, options.summaryBudgetBytes - ENVELOPE_ALLOWANCE_BYTES)
+    const prompt = buildSummaryPrompt({
+      records: store.records,
+      scopeLabel,
+      ...projectPath === undefined ? {} : { projectPath },
+      budgetBytes: contentBudget,
+    })
+    const call = (text: string) => streamModelText(llm, {
       session,
       sessionId,
       system: SUMMARY_SYSTEM_PROMPT,
-      prompt: buildSummaryPrompt({
-        records: store.records,
-        scopeLabel,
-        ...projectPath === undefined ? {} : { projectPath },
-        budgetBytes: options.summaryBudgetBytes,
-      }),
+      prompt: text,
       label: 'summary',
     })
+    let answer = await call(prompt)
+    let attempts = 1
+    while (Buffer.byteLength(answer.text.trim(), 'utf8') > contentBudget && attempts < SUMMARY_ATTEMPTS) {
+      attempts += 1
+      const size = Buffer.byteLength(answer.text.trim(), 'utf8')
+      answer = await call(`${prompt}\n\nYour previous answer was ${String(size)} bytes; the hard content limit is ${String(contentBudget)} bytes. Rewrite it shorter, keeping the same facts.`)
+    }
+    let content = answer.text.trim()
+    if (Buffer.byteLength(content, 'utf8') > contentBudget) {
+      content = truncateBytes(content, contentBudget)
+      options.logger?.warn?.(`dsh-reflection: summary at ${layout.summaryPath} stayed over ${String(contentBudget)} bytes after ${String(attempts)} attempt(s); truncated`)
+    }
     writeSummaryDocument(layout.summaryPath, {
-      text: answer.text,
+      content,
       revision: store.revision,
       generated_at: new Date((options.now ?? Date.now)()).toISOString(),
       model: `${answer.provider}/${answer.model}`,

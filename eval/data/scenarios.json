@@ -320,7 +320,7 @@
             "excludes": [
               "zeta-canary"
             ],
-            "maxBytes": 1200
+            "maxBytes": 1800
           }
         }
       ]

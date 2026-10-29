@@ -295,10 +295,15 @@ function checkStore({ home, scope, project, projectId, contains, any, excludes, 
  */
 function checkSummary({ home, scope, project, projectId, contains, excludes, maxBytes }) {
   const layout = scope === 'user' ? userLayout(join(home, 'memory')) : projectLayout(join(home, 'memory'), projectId(project))
-  if (!existsSync(layout.summaryPath)) return fail('summary.md was not generated')
-  const file = readFileSync(layout.summaryPath, 'utf8')
-  const body = file.replace(/^---\n[\s\S]*?\n---\n/u, '').trim()
-  if (body === '') return fail('summary.md is empty')
+  if (!existsSync(layout.summaryPath)) return fail('summary.json was not generated')
+  let cached
+  try {
+    cached = JSON.parse(readFileSync(layout.summaryPath, 'utf8'))
+  } catch {
+    return fail('summary.json is not valid JSON')
+  }
+  const body = String(cached.content ?? '').trim()
+  if (body === '') return fail('summary.json has no content')
   const where = `summary ${scope}${project === undefined ? '' : `/${project}`}`
   for (const needle of contains ?? []) {
     if (!body.toLowerCase().includes(needle.toLowerCase())) return fail(`${where} does not mention ${JSON.stringify(needle)}: ${JSON.stringify(body.slice(0, 200))}`)

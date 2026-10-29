@@ -47,11 +47,11 @@ $DSH_HOME/memory/
 ├── user/
 │   ├── memories.json    # index: metadata + title, one row per record
 │   ├── memories/<id>.md # body: the text and its evidence
-│   └── summary.md       # model-written summary, cached
+│   └── summary.json     # model-written summary, cached (JSON)
 ├── projects/<project_id>/
 │   ├── memories.json
 │   ├── memories/<id>.md
-│   └── summary.md
+│   └── summary.json
 └── tombstones.jsonl     # body-free record of deletions
 ```
 
@@ -74,12 +74,20 @@ the index lists every record by title and id; each record has its own file under
 
 The summary text is written by the model: after a write or a consolidation that
 wrote Memory, the Session's own model is asked to describe what Memory holds, and
-the answer is cached in `summary.md` beside the records. The commit waits for
+the answer is cached in `summary.json` beside the records. The commit waits for
 that refresh, so the summary never describes Memory as it was before the call
 that just returned. Injection only reads the cache; it never calls a model. The
 summary call has no plugin-side output cap: it inherits the provider's own limit,
 so a reasoning model cannot spend a fixed budget on thinking and leave the answer
 truncated.
+
+The cache is JSON: `{ revision, generated_at, model, budget, content }`. Only
+`content` is subject to the budget; the metadata is provenance and is never
+truncated. The model is asked for the content budget (the injection budget minus
+the fixed envelope allowance); an answer over it is regenerated, and one that
+never fits after the attempt cap is truncated, with a warning, before caching.
+`npm run check:summaries` verifies the files on disk; it exits non-zero when a
+cached content is over the budget.
 
 The fixed part of the envelope — the counts, the index paths, and the pointer to
 per-record files — is what makes the summary actionable, so it is never dropped
@@ -177,7 +185,7 @@ These properties shape the code:
 
 - **Writers serialize.** Every mutation takes an in-process chain and an exclusive lock file, re-reads the canonical store, and validates against that revision — so a desktop session and a headless run sharing one harness home cannot lose each other's writes. A lock from a crashed process is reclaimed only when its recorded pid is provably gone (`ESRCH`); `EPERM` means the process is alive and keeps it. Reclaiming is itself serialized, because two processes that both judge the same lock stale would otherwise let the slower one delete the lock the faster one has just taken.
 - **What is read is checked.** `memories.json` and `registry.json` are validated on the way in as well as on the way out — ids, timestamps, uniqueness, and every supersession reference. A document someone edited by hand fails loudly instead of feeding an index, a view, or a model request, and a project id is checked before it becomes a directory name. A canonical store that cannot be read stops the turn, naming the file: degrading to an empty index would present a broken store as an agent that has simply forgotten, which is the harder failure to diagnose. An absent store is not corruption — that is what a first run looks like.
-- **The summary is cached, not recomputed.** Injection runs before every model step, so it reads `summary.md`; the model call that writes it happens on a write or behind the next read, never on the request path. A cached summary that describes an older revision is still served — a slightly stale summary beats a missing one — while a background refresh catches up.
+- **The summary is cached, not recomputed.** Injection runs before every model step, so it reads `summary.json`; the model call that writes it happens on a write or behind the next read, never on the request path. A cached summary that describes an older revision is still served — a slightly stale summary beats a missing one — while a background refresh catches up.
 - **The index is the commit point.** A mutation writes the body first, then the index; only the index write commits. A body the index does not name is removed on the next write. The body is the only copy of its text, so a missing body stops the read and names both the record and the path.
 - **Titles lead, bodies follow.** Every record carries a one-line title in the index; a reader scans titles before opening a body. Authored titles are not length-limited; a record that predates the field gets a derived title on read.
 - **Provenance is built, not accepted.** The model supplies a fact; the plugin attaches the Session, the turn's human message, and its sequence number. When a turn cannot be identified, the reference stays empty rather than guessed.

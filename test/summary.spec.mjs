@@ -86,16 +86,20 @@ check('a budget too small for the pointer renders nothing',
   renderMemorySummary({ counts: counts(), paths: { user: '/home/me/.dsh/memory/user/memories.json' }, budgetBytes: 40 }) === '')
 check('multi-byte text is never split', !long.includes('\uFFFD'))
 
-console.log('the summary cache round-trips')
-const entry = { text: '偏好中文解释。', revision: 7, generated_at: AT, model: 'p/m' }
+console.log('the summary cache round-trips as JSON')
+const entry = { content: '偏好中文解释。', revision: 7, generated_at: AT, model: 'p/m', budget: 2400 }
 const document = renderSummaryDocument(entry)
 const parsed = parseSummaryDocument(document)
-check('the text survives', parsed?.text === entry.text)
+check('the content survives', parsed?.content === entry.content)
 check('the revision survives', parsed?.revision === 7)
 check('the model survives', parsed?.model === 'p/m')
-check('a document without frontmatter is refused', parseSummaryDocument('just text') === undefined)
-check('a document without a revision is refused', parseSummaryDocument('---\ngenerated_at: x\n---\n\ntext') === undefined)
-check('a document without a body is refused', parseSummaryDocument('---\nrevision: 1\n---\n\n') === undefined)
+check('the budget survives', parsed?.budget === 2400)
+check('the file is JSON', JSON.parse(document).content === entry.content)
+check('a document without metadata is refused', parseSummaryDocument('just text') === undefined)
+check('a document without a revision is refused',
+  parseSummaryDocument(JSON.stringify({ generated_at: AT, content: 'text' })) === undefined)
+check('a document without content is refused',
+  parseSummaryDocument(JSON.stringify({ revision: 1, generated_at: AT, content: '  ' })) === undefined)
 
 console.log('the prompt describes the store')
 const prompt = buildSummaryPrompt({
@@ -126,13 +130,13 @@ const titled = buildSummaryPrompt({
 check('the title appears before the body', titled.includes('构建命令') && titled.indexOf('构建命令') < titled.indexOf('pnpm run build:edge'))
 
 console.log('staleness includes the budget')
-const fresh = { text: 'a summary', revision: 3, generated_at: AT, budget: 2400 }
+const fresh = { content: 'a summary', revision: 3, generated_at: AT, budget: 2400 }
 check('a matching cache is fresh', summaryIsStale(fresh, 3, 2400) === false)
 check('a missing cache is stale', summaryIsStale(undefined, 3, 2400) === true)
 check('a revision mismatch is stale', summaryIsStale(fresh, 4, 2400) === true)
 check('a budget mismatch is stale', summaryIsStale(fresh, 3, 1200) === true)
-check('a cache without a budget is stale', summaryIsStale({ text: 'a summary', revision: 3, generated_at: AT }, 3, 2400) === true)
-check('empty text is stale', summaryIsStale({ ...fresh, text: '  ' }, 3, 2400) === true)
+check('a cache without a budget is stale', summaryIsStale({ content: 'a summary', revision: 3, generated_at: AT }, 3, 2400) === true)
+check('empty content is stale', summaryIsStale({ ...fresh, content: '  ' }, 3, 2400) === true)
 
 if (failures > 0) {
   console.log(`\n${String(failures)} FAILURE(S)`)

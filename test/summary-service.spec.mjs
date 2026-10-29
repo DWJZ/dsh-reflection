@@ -94,11 +94,11 @@ console.log('the call has no plugin-side cap and the answer is cached')
   ])
   await service.refresh(agent)
   check('the call carries no maxTokens', seen.length === 1 && seen[0].maxTokens === undefined, JSON.stringify(seen[0]?.maxTokens))
-  check('the prompt carries the budget', String(seen[0]?.messages?.[0]?.content?.[0]?.text ?? '').includes('2400'))
+  check('the prompt carries the content budget', String(seen[0]?.messages?.[0]?.content?.[0]?.text ?? '').includes('1800'))
   check('the summary file exists', existsSync(layout.summaryPath))
   const text = readFileSync(layout.summaryPath, 'utf8')
   check('the model text is cached', text.includes('the summary'))
-  check('the cached revision is recorded', text.includes('revision:'))
+  check('the cached revision is recorded', Number.isInteger(JSON.parse(text).revision) && JSON.parse(text).revision >= 1)
   check('no warning on success', warnings.length === 0, JSON.stringify(warnings))
   rmSync(root, { recursive: true, force: true })
 }
@@ -134,7 +134,80 @@ console.log('a different budget makes the cache stale')
   check('the same budget reuses the cache', seen.length === 1)
   await makeService(3200).refresh(agent)
   check('a new budget refreshes', seen.length === 2)
-  check('the new budget is cached', readFileSync(layout.summaryPath, 'utf8').includes('budget: 3200'))
+  check('the new budget is cached', JSON.parse(readFileSync(layout.summaryPath, 'utf8')).budget === 3200)
+  rmSync(root, { recursive: true, force: true })
+}
+
+console.log('a summary over the content budget is regenerated')
+{
+  const root = mkdtempSync(join(tmpdir(), 'dsh-reflection-summary-retry-'))
+  const layout = userLayout(root)
+  await withStore({ storePath: layout.storePath, lockPath: layout.lockPath, recordsDir: layout.recordsDir, lockTimeoutMs: 2000, staleLockMs: 60000 }, current => ({
+    changed: true,
+    records: [...current.records, memoryRecord({ title: 'a title', content: 'a fact' })],
+  }))
+  const answers = ['x'.repeat(700), 'short summary']
+  const seen = []
+  const warnings = []
+  const service = createSummaryService({
+    scopes: { user: layout, project: () => layout },
+    projectFor: () => null,
+    llmScope: () => ({
+      llm: {
+        async *stream(options) {
+          seen.push(options)
+          const text = answers[Math.min(seen.length - 1, answers.length - 1)]
+          yield { type: 'text-delta', index: 0, text }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        },
+      },
+    }),
+    logger: { warn: message => warnings.push(String(message)), debug: () => {} },
+    summaryBudgetBytes: 800,
+    now: () => Date.parse('2026-10-29T00:00:00.000Z'),
+  })
+  await service.refresh(agent)
+  const cached = JSON.parse(readFileSync(layout.summaryPath, 'utf8'))
+  check('the model was asked again', seen.length === 2, String(seen.length))
+  check('the regenerated content is cached', cached.content === 'short summary')
+  check('the content fits the budget', Buffer.byteLength(cached.content, 'utf8') <= 200)
+  check('the prompt asks for the content budget', String(seen[0].messages[0].content[0].text).includes('200'))
+  check('the retry names the oversize answer', String(seen[1].messages[0].content[0].text).includes('previous answer'))
+  check('no truncation was needed', warnings.length === 0)
+  rmSync(root, { recursive: true, force: true })
+}
+
+console.log('a summary that never fits is truncated and warned')
+{
+  const root = mkdtempSync(join(tmpdir(), 'dsh-reflection-summary-truncate-'))
+  const layout = userLayout(root)
+  await withStore({ storePath: layout.storePath, lockPath: layout.lockPath, recordsDir: layout.recordsDir, lockTimeoutMs: 2000, staleLockMs: 60000 }, current => ({
+    changed: true,
+    records: [...current.records, memoryRecord({ title: 'a title', content: 'a fact' })],
+  }))
+  const seen = []
+  const warnings = []
+  const service = createSummaryService({
+    scopes: { user: layout, project: () => layout },
+    projectFor: () => null,
+    llmScope: () => ({
+      llm: {
+        async *stream(options) {
+          seen.push(options)
+          yield { type: 'text-delta', index: 0, text: 'x'.repeat(700) }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        },
+      },
+    }),
+    logger: { warn: message => warnings.push(String(message)), debug: () => {} },
+    summaryBudgetBytes: 800,
+    now: () => Date.parse('2026-10-29T00:00:00.000Z'),
+  })
+  await service.refresh(agent)
+  const cached = JSON.parse(readFileSync(layout.summaryPath, 'utf8'))
+  check('it stops after the attempt cap', seen.length === 3, String(seen.length))
+  check('the cached content fits the budget', Buffer.byteLength(cached.content, 'utf8') <= 200)
+  check('the truncation is warned', warnings.some(message => message.includes('truncated')), JSON.stringify(warnings))
   rmSync(root, { recursive: true, force: true })
 }
 

@@ -418,8 +418,8 @@ function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
     if (record.updated_at > updatedAt) updatedAt = record.updated_at
   }
   const parts: string[] = []
-  if (userSummary !== undefined) parts.push(`user: ${userSummary.text.trim()}`)
-  if (projectSummary !== undefined) parts.push(`project: ${projectSummary.text.trim()}`)
+  if (userSummary !== undefined) parts.push(`user: ${userSummary.content.trim()}`)
+  if (projectSummary !== undefined) parts.push(`project: ${projectSummary.content.trim()}`)
 
   return renderMemorySummary({
     summaryText: parts.join('\n\n'),

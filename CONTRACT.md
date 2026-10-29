@@ -63,12 +63,12 @@ $DSH_HOME/memory/
 ├── user/
 │   ├── memories.json      # 索引：元数据 + title，一行一条记录
 │   ├── memories/<id>.md   # 正文 + evidence（唯一一份）
-│   └── summary.md         # 模型写的摘要缓存（注入只读它）
+│   └── summary.json       # 模型写的摘要缓存（注入只读它）
 ├── projects/
 │   └── <project_id>/
 │       ├── memories.json
 │       ├── memories/<id>.md
-│       └── summary.md
+│       └── summary.json
 └── tombstones.jsonl
 ```
 
@@ -77,7 +77,7 @@ $DSH_HOME/memory/
 ```text
 memories.json        = 索引（元数据 + title；不含 content / evidence）
 memories/<id>.md     = 正文 + evidence（唯一副本；缺失即 fail loud）
-summary.md           = 模型写的摘要（frontmatter: revision / generated_at / model）
+summary.json         = 模型写的摘要（JSON: revision / generated_at / model / budget / content）
 ```
 
 Memory 的物理位置不可配置：内部恒为 `path.join(resolvedDshHome, 'memory')`，**不提供 `memoryDir`**。
@@ -593,7 +593,7 @@ different host → 无法确认 PID → 不 reclaim，等到 lockTimeoutMs → f
 
 **`memories/<id>.md` 是正文**：`content` 段落 + `## Evidence` 列表（observed_at、kind、seq、session、quote）。它是正文与 evidence 的**唯一副本**，不是派生视图；文件缺失时读取直接 fail loud，报错指名记录 id 与缺失路径。
 
-**`summary.md`**：模型写的摘要缓存（§14）。注入只读它，不在请求路径上调用模型。
+**`summary.json`**：模型写的摘要缓存（§14），JSON 字段 `revision` / `generated_at` / `model` / `budget` / `content`。注入只读它的 `content`，不在请求路径上调用模型；metadata 永不参与截断。
 
 旧版本生成的 `MEMORY.md` 在迁移时删除；迁移后不再有任何重复索引。
 
@@ -665,7 +665,7 @@ the index lists every record by title and id; each record has its own file under
 规则：
 
 - **不注入任何一条记录的正文。** envelope 只含：固定 notice、两个 scope 的 active 计数、类别计数、最后更新时间、两个 `memories.json` 的绝对路径，以及指向 `memories/<id>.md` 的说明。
-- **摘要由模型写。** store revision 变化后（显式写入与 consolidation 写入都会等待刷新；读取发现落后时也会后台补刷新），用该 Session 自己的 route 生成，写进该 scope 的 `summary.md`（frontmatter 带 `revision` / `generated_at` / `model` / `budget`）。注入**只读缓存**，同步路径上不调用模型。摘要调用不设插件侧输出上限，沿用 provider 自己的上限；提示词带上 `summaryBudgetBytes` 并说明超出会被截断。缓存的 `budget` 与当前配置不一致时视为过期：下一次读取重新生成。失败第一次记 `warn`，后续重试降到 `debug`，避免坏 route 刷屏。
+- **摘要由模型写。** store revision 变化后（显式写入与 consolidation 写入都会等待刷新；读取发现落后时也会后台补刷新），用该 Session 自己的 route 生成，写进该 scope 的 `summary.json`（`revision` / `generated_at` / `model` / `budget` / `content`）。注入**只读缓存**，同步路径上不调用模型。摘要调用不设插件侧输出上限，沿用 provider 自己的上限；提示词给的是**正文预算**（`summaryBudgetBytes` 减去固定信封预留 600 字节）。正文超过预算时重新生成，最多 3 次；仍超出则按正文预算截断并记 `warn`，只有 `content` 会被截断。缓存的 `budget` 与当前配置不一致时视为过期：下一次读取重新生成。失败第一次记 `warn`，后续重试降到 `debug`，避免坏 route 刷屏。`npm run check:summaries`（`scripts/check-summary-budget.mjs`）扫描 `$DSH_HOME/memory/**/summary.json`，任何 `content` 超过预算即非零退出。
 - 缓存描述的 revision 落后时仍然注入 —— 过时的摘要优于没有摘要 —— 由后台刷新追上。
 - **固定部分永不为了腾地方而裁掉**：超 `summaryBudgetBytes` 时先裁模型写的那段（按 UTF-8 字节切，不劈开字符，末尾补 `…`）。连固定部分都放不下时整个 envelope 为 `''`。
 - 两个 scope 都没有 active 记录时不注入。
