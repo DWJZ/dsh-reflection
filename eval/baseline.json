@@ -15,7 +15,12 @@
       "user-cross-project",
       "project-isolation",
       "superseded-not-served",
-      "detail-lookup"
+      "detail-lookup",
+      "consolidation-write",
+      "summary-fidelity",
+      "update-write",
+      "secret-screening",
+      "consolidation-secret"
     ]
   }
 }
