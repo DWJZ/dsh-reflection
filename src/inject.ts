@@ -16,6 +16,7 @@
  */
 
 import { truncateChars } from './schema.js'
+import { redactText } from './redact.js'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Provenance } from './types/memory.js'
 
@@ -178,17 +179,18 @@ export function buildProvenance(
 ): Provenance {
   const sessionId = agent?.session?.header?.id
   if (typeof sessionId !== 'string' || sessionId === '') {
-    return { evidence: undefined, sourceTexts: [] }
+    return { evidence: undefined }
   }
   const observedAt = new Date((options.now ?? Date.now)()).toISOString()
   const input = tracker.inputFor(sessionId)
   if (input === undefined) {
     return {
       evidence: { session_id: sessionId, event_seqs: [], kind: 'user', quote: '', observed_at: observedAt },
-      sourceTexts: [],
     }
   }
-  const fullText = textOfMessage(input.message)
+  // Redact before truncating: a credential that straddles the quote limit would
+  // otherwise survive as a fragment no detector recognizes.
+  const fullText = redactText(textOfMessage(input.message))
   return {
     evidence: {
       session_id: sessionId,
@@ -197,7 +199,6 @@ export function buildProvenance(
       quote: truncateChars(fullText, options.evidenceQuoteMaxChars),
       observed_at: observedAt,
     },
-    sourceTexts: fullText === '' ? [] : [fullText],
   }
 }
 

@@ -227,11 +227,10 @@ function rememberTool(deps: MemoryDeps) {
       requireParameterSet(args)
       const project = deps.projectFor(exec.agent)
       const options = scopeOptions(deps, project)
-      const provenance = deps.evidenceFor(exec.agent) ?? { evidence: undefined, sourceTexts: [] }
+      const provenance = deps.evidenceFor(exec.agent) ?? { evidence: undefined }
       const common = {
         content: args.content,
         evidence: provenance.evidence,
-        sourceTexts: provenance.sourceTexts,
       }
       const result = args.mode === 'add'
         ? await addMemory(options, {

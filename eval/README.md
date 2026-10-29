@@ -72,20 +72,17 @@ reading committed `assistant/message` usage and the consolidator's audit, so
 **summary-refresh calls are not counted** — they are model calls this plugin makes
 outside the agent's turn. Treat the number as a floor, not the whole bill.
 
-One behaviour the suite pinned down: secret screening is **turn-granular**. The
-plugin screens the complete human message the evidence cites, so one credential in
-a turn blocks every fact that turn could have contributed. That is why
-`consolidation-write` and `consolidation-secret` are separate scenarios; it is a
-deliberate, documented trade (see the contract's secret section), not a bug the
-suite should paper over.
+Two behaviours the suite pinned down:
 
-The model is pinned in `data/scenarios.json`:
-`deepseek-official / deepseek-flash / reasoningEffort: high`. Change it there,
-not in the workflow, so the route a run used is part of the committed dataset.
-
-**No token cap.** The suite is gated by trigger (release tag or manual), not by
-budget; a run that hits a provider limit fails visibly instead of being cut
-short mid-scenario.
+- **A credential in the fact is refused; a credential in the cited turn is
+  redacted.** The plugin replaces the matched span with `[redacted]` before
+  truncating the evidence quote, so one pasted key no longer discards every fact
+  from the same turn. `consolidation-write` now carries a key next to a real
+  decision and asserts that the decision is stored and the key is not;
+  `consolidation-secret` covers a turn whose only content is a credential.
+- **The quote stops being byte-verbatim when it contained a credential.** It is a
+  faithful quote of the redacted text. That is the deliberate trade recorded in
+  the contract's secret section.
 
 ## Baseline and regression
 

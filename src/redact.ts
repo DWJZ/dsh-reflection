@@ -5,6 +5,12 @@
  * who asks the harness to remember an API key gets a refusal, not a stored key.
  * Only a locator that is itself not a secret may be stored.
  *
+ * Two paths, because a fact and its citation play different roles. A credential
+ * in the fact (the `content`) refuses the write: rewriting the sentence would
+ * guess at what it meant. A credential in the text a citation quotes is
+ * replaced with {@link REDACTED} before the quote is truncated, so a fact worth
+ * keeping is not lost because the same turn happened to paste a key.
+ *
  * The guarantee covers what this plugin owns — the canonical store, the view, the
  * tombstone log, the logger, and tool results. It cannot cover a trajectory that
  * another subsystem already recorded.

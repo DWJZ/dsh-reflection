@@ -248,7 +248,7 @@ best-effort optional = event_seqs
   ↓ 记下最后一条人类 user/message 及其 seq
   ↓ 每次 turn/start 时把它快照成"本轮输入"
 memory_remember
-  ↓ quote 使用本轮输入的文本，截断到 evidenceQuoteMaxChars
+  ↓ quote 使用本轮输入的文本（先脱敏，见 §7.2），截断到 evidenceQuoteMaxChars
   ↓ 该事件自带 seq → event_seqs = [seq]
   ↓ 无从确定时      → event_seqs = []
 ```
@@ -280,26 +280,32 @@ AWS AKIA[0-9A-Z]{16}
 明显高熵 credential
 ```
 
-命中 → `NOOP` + `reason = secret-detected`。
+处理分两种：
 
-### 7.2 两层扫描顺序
+- **content 命中** → `NOOP` + `reason = secret-detected`。事实正文是模型或用户写的，不能脱敏后猜原意。
+- **被引用的源文本命中** → **脱敏后继续写入**：整段凭据替换为 `[redacted]`，`quote` 从脱敏后的文本截断生成。事实本身（content）若干净则照常落盘。
+
+因此 `evidence.quote` 在源文本含凭据时**不是逐字原文**，而是"脱敏文本的忠实引用"。这是有意的取舍：旧行为是整轮拒绝，一句密钥会让同一轮的所有事实一起丢失。
+
+### 7.2 扫描顺序：先脱敏，再截断
 
 ```text
-① pre-truncation scan：完整 user message + memory content → 命中则整个 remember NOOP
-② 生成截断后的 evidence.quote
-③ pre-persist scan：对**本次写入新引入的**持久化文本再扫一次（新 content + 截断后的新 quote）→ 命中同样 NOOP
-④ persist
+① 取被引用事件的完整文本（显式写入取当前轮 user message）
+② redact：把命中的凭据整段替换为 [redacted]（在截断之前）
+③ 生成截断后的 evidence.quote（来自脱敏文本）
+④ pre-persist scan：新 content + 新 quote → 命中同样 NOOP
+⑤ persist
 ```
 
-先截断再扫描会让 secret 被截断在 quote 边界，形成"不再匹配 pattern 但仍含 credential 片段"的字符串。① 与 ③ 两层合起来保证的是：
+先截断再扫描会让 secret 被截断在 quote 边界，形成"不再匹配 pattern 但仍含 credential 片段"的字符串。② 在截断之前完成，所以片段不可能存在；④ 是最后一道，同时拦住把原始 quote 直接交给 action 的调用方。
 
-> 每次 mutation 新引入的每一段文本，都必须先通过 secret screening 才能进入 Memory 拥有的持久化存储。至少包括：新的 / 被改写的 `content`、新生成的 `evidence.quote`、以及截断前的完整 user 原文。
+保证是：
+
+> 每次 mutation 新引入的每一段持久化文本，都必须先通过 secret screening 才能进入 Memory 拥有的持久化存储。至少包括：新的 / 被改写的 `content`、新生成的 `evidence.quote`（来自已脱敏文本）。
 
 **历史文本不因无关 mutation 而被重新审计。** 已经存在于 canonical 里的 `evidence[*].quote` 不会在 archive / forget / 其它记录的写入时被按**当前**规则重扫。原因是扫描规则会演进：若把"每次 persist 都重扫完整 record"当成保证，那么新增一条检测规则就会让历史合法数据突然不可修改 —— 这与 §5.2 中 `maxEvidencePerMemory` 的 writer-policy 边界是同一个道理：**改动检测规则或配置，不得让此前合法的 canonical 数据失效。**
 
 需要重新审计历史数据时，应当由一次**显式**的、以它为目的的操作完成，而不是搭在某次无关写入上。
-
-`evidenceQuoteMaxChars` 的单位是 **Unicode code points**（`Array.from(text).slice(0, limit).join('')`），不是 UTF-16 code units；不做 grapheme cluster 级处理。
 
 ### 7.3 保证范围
 
@@ -799,7 +805,8 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 - [ ] Phase 1 writer 固定 confidence=1.0；storage schema 允许 `[0,1]`
 - [ ] provenance 由 host 生成，模型不能注入 evidence
 - [ ] evidence 绑定当前 turn；seq 不可得时留空而非猜
-- [ ] secret 扫描覆盖 content + evidence.quote；截断边界不漏
+- [ ] content 命中 secret → 拒绝；被引用源文本命中 → 截断前脱敏成 `[redacted]`，quote 不含凭据片段
+- [ ] 落盘前再扫 content + quote；调用方直传原始 quote 也拦得住
 - [ ] secret 保证范围明确（不含 Session trajectory）
 - [ ] tombstone 无正文；并发写产生合法 JSONL
 - [ ] exact duplicate 不做 lowercase

@@ -114,10 +114,8 @@ export interface AddInput {
   category: MemoryCategory
   /** Required for a project record. */
   projectId?: string | null | undefined
-  /** The citation to attach. */
+  /** The citation to attach. Its quote is redacted before it is stored. */
   evidence?: EvidenceEntry | undefined
-  /** Untruncated text the citation came from, screened again at the write. */
-  sourceTexts?: string[] | undefined
   /** Automatic writes state their reviewed confidence; explicit ones do not. */
   confidence?: number | undefined
 }
@@ -126,10 +124,8 @@ export interface AddInput {
 export interface TargetedInput extends RecordTarget {
   /** The content that replaces it. */
   content: string
-  /** The citation to accumulate. */
+  /** The citation to accumulate. Its quote is redacted before it is stored. */
   evidence?: EvidenceEntry | undefined
-  /** Untruncated text the citation came from, screened again at the write. */
-  sourceTexts?: string[] | undefined
   /** Automatic writes state their reviewed confidence; explicit ones do not. */
   confidence?: number | undefined
 }
@@ -154,21 +150,22 @@ export interface RecordTarget {
  * retires, and the shape says so by not offering a field for it.
  */
 export interface ArchiveInput extends RecordTarget {
-  /** The citation to accumulate. */
+  /** The citation to accumulate. Its quote is redacted before it is stored. */
   evidence?: EvidenceEntry | undefined
-  /** Untruncated text the citation came from, screened again at the write. */
-  sourceTexts?: string[] | undefined
 }
 
 /** Any input one of the three actions takes. */
 export type ActionInput = AddInput | TargetedInput
 
-/** The citation handed to a write, and the text it was taken from. */
+/** The citation handed to a write. */
 export interface Provenance {
-  /** The citation, absent when the Session has nothing to cite. */
+  /**
+   * The citation, absent when the Session has nothing to cite.
+   *
+   * Its quote is already redacted: the plugin builds it from the turn's text
+   * before truncating, so a credential cannot survive in a fragment.
+   */
   evidence: EvidenceEntry | undefined
-  /** Untruncated text the citation came from, screened again at the write. */
-  sourceTexts: string[]
 }
 
 /**
@@ -191,10 +188,8 @@ export interface AddOperation {
   category: MemoryCategory
   /** Required for a project record. */
   projectId?: string | null | undefined
-  /** The citation to attach. */
+  /** The citation to attach. Its quote is redacted before it is stored. */
   evidence?: EvidenceEntry | undefined
-  /** Untruncated text the citation came from, screened again at the write. */
-  sourceTexts?: string[] | undefined
   /** The confidence the review assigned. */
   confidence?: number | undefined
 }
@@ -215,10 +210,8 @@ export interface TargetedOperation {
   category?: MemoryCategory | undefined
   /** Inherited from the reviewed target; never taken from the model. */
   projectId?: string | null | undefined
-  /** The citation to accumulate. */
+  /** The citation to accumulate. Its quote is redacted before it is stored. */
   evidence?: EvidenceEntry | undefined
-  /** Untruncated text the citation came from, screened again at the write. */
-  sourceTexts?: string[] | undefined
   /** The confidence the review assigned. */
   confidence?: number | undefined
 }

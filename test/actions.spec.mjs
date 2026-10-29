@@ -17,7 +17,7 @@ const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const actions = await import(pathToFileURL(join(PLUGIN, 'src/actions.js')).href)
 const { readStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.js')).href)
 const { userLayout, projectLayout, tombstoneLayout } = await import(pathToFileURL(join(PLUGIN, 'src/paths.js')).href)
-const { findSecret } = await import(pathToFileURL(join(PLUGIN, 'src/redact.js')).href)
+const { findSecret, redactText } = await import(pathToFileURL(join(PLUGIN, 'src/redact.js')).href)
 const { newProjectId } = await import(pathToFileURL(join(PLUGIN, 'src/schema.js')).href)
 const { memoryRecord } = await import('./fixtures/records.mjs')
 
@@ -346,23 +346,22 @@ check('a credential in the quote is refused', dirtyQuote.action === 'noop')
 check('a refused quote leaves nothing behind', !memoryTreeContains('ghp_abcdefghijklmnopqrstuvwxyz0123456789'))
 check('the refusal is reported rather than logged as content', !warnings.some(message => message.includes('ghp_')))
 
-console.log('secret_after_quote_limit_rejected and secret_crossing_quote_boundary_rejected')
+console.log('a credential is redacted before the quote is truncated')
 const longSecret = `sk-${'A'.repeat(24)}`
 const fullMessage = `记住，部署用的 key 是 ${longSecret} 请务必保密`
-const truncatedQuote = fullMessage.slice(0, 20)
-check('the truncated fragment alone would pass a naive scan', findSecret(truncatedQuote) === undefined)
-check('the fragment still carries the start of the credential', truncatedQuote.includes('sk-'))
-check('the complete message is what the pre-truncation scan sees', findSecret(fullMessage) !== undefined)
+const truncatedFragment = fullMessage.slice(0, 20)
+check('the raw fragment alone would pass a naive scan', findSecret(truncatedFragment) === undefined)
+const redactedQuote = redactText(fullMessage).slice(0, 120)
+check('redaction removes the credential', redactedQuote.includes('[redacted]') && !redactedQuote.includes('AAAA'))
 const boundary = await actions.addMemory(clocked(117000), {
   content: '部署使用一个长期凭据',
   scope: 'project',
   category: 'reference',
   projectId: PROJECT_B,
-  evidence: evidence({ quote: truncatedQuote }),
-  sourceTexts: [fullMessage],
+  evidence: evidence({ quote: redactedQuote }),
 })
-check('a credential beyond the truncation point is still refused', boundary.action === 'noop')
-check('nothing from the message survived', !memoryTreeContains('AAAA'))
+check('a clean fact with a redacted quote is stored', boundary.action === 'added')
+check('nothing from the secret survived in the store', !memoryTreeContains('AAAA'))
 
 console.log('validation and missing project scope')
 check('project scope without a project is refused',

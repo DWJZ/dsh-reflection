@@ -69,13 +69,12 @@ function requireConfidence(value: unknown, fallback: number) {
  * @param input.category - the chosen category.
  * @param input.projectId - the project, required for project scope.
  * @param input.evidence - provenance the host built from the current turn.
- * @param input.sourceTexts - complete texts to screen before any truncation.
  * @returns the applied action and the affected id.
  */
 export async function addMemory(options: ActionOptions, input: AddInput) {
   const layout = requireLayout(options, input.scope, input.projectId)
   const content = requireContent(input.content)
-  const screened = screen([...input.sourceTexts ?? [], content], input.evidence?.quote)
+  const screened = screen(content, input.evidence?.quote)
   if (screened !== undefined) return noop(`secret-detected:${screened}`)
 
   // Two branches return different results, so the result type is stated here.
@@ -117,13 +116,12 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
  * @param input.content - the restated fact.
  * @param input.projectId - the current project, used to decide visibility.
  * @param input.evidence - provenance the host built from the current turn.
- * @param input.sourceTexts - complete texts to screen before any truncation.
  * @returns the applied action and the record id.
  */
 export async function updateMemory(options: ActionOptions, input: TargetedInput) {
   const located = locateVisible(options, input.id, input.projectId)
   const content = requireContent(input.content)
-  const screened = screen([...input.sourceTexts ?? [], content], input.evidence?.quote)
+  const screened = screen(content, input.evidence?.quote)
   if (screened !== undefined) return noop(`secret-detected:${screened}`)
 
   return apply(options, located.layout, (store: MemoryStore) => {
@@ -153,13 +151,12 @@ export async function updateMemory(options: ActionOptions, input: TargetedInput)
  * @param input.content - the newer fact.
  * @param input.projectId - the current project, used to decide visibility.
  * @param input.evidence - provenance the host built from the current turn.
- * @param input.sourceTexts - complete texts to screen before any truncation.
  * @returns the applied action, the new id, and the retired id.
  */
 export async function supersedeMemory(options: ActionOptions, input: TargetedInput) {
   const located = locateVisible(options, input.id, input.projectId)
   const content = requireContent(input.content)
-  const screened = screen([...input.sourceTexts ?? [], content], input.evidence?.quote)
+  const screened = screen(content, input.evidence?.quote)
   if (screened !== undefined) return noop(`secret-detected:${screened}`)
 
   return apply(options, located.layout, (store: MemoryStore) => {
@@ -393,21 +390,18 @@ async function recordTombstone(options: ActionOptions, entry: TombstoneEntry) {
 }
 
 /**
- * Screen every text that would be persisted.
+ * Screen the text one write is about to persist.
  *
- * Two passes, because truncating first can cut a credential into a fragment that
- * no longer matches any pattern while still carrying most of the secret: the full
- * source text is screened before the quote is truncated, and the finished record
- * is screened again before it is stored.
- * @param fullTexts - complete texts, before truncation.
- * @param persistedQuote - the truncated quote that will be stored.
+ * The quote arrives already redacted (the caller builds it from redacted source
+ * text before truncating), so a credential cannot survive in a fragment; this
+ * check is the last line and also refuses a caller that hands a raw quote. The
+ * content is checked because it is the part a later request will show.
+ * @param content - the fact about to be stored.
+ * @param persistedQuote - the quote that will be stored.
  * @returns the matching rule name, or undefined when everything is clean.
  */
-function screen(fullTexts: readonly string[], persistedQuote: string | undefined): string | undefined {
-  const beforeTruncation = findSecretIn(fullTexts.map((text: string) => String(text ?? '')))
-  if (beforeTruncation !== undefined) return beforeTruncation.name
-  if (persistedQuote === undefined) return undefined
-  return findSecretIn([persistedQuote])?.name
+function screen(content: string, persistedQuote: string | undefined): string | undefined {
+  return findSecretIn([content, persistedQuote])?.name
 }
 
 /**

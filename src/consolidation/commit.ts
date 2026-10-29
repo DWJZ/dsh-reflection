@@ -110,7 +110,6 @@ function apply(options: ActionOptions, operation: AutoOperation): Promise<Action
         category: operation.category,
         projectId: operation.projectId,
         evidence: operation.evidence,
-        sourceTexts: operation.sourceTexts,
         confidence: operation.confidence,
       })
     case 'update':
@@ -123,7 +122,6 @@ function apply(options: ActionOptions, operation: AutoOperation): Promise<Action
         content: operation.content,
         projectId: operation.projectId,
         evidence: operation.evidence,
-        sourceTexts: operation.sourceTexts,
         confidence: operation.confidence,
       })
     case 'supersede':
@@ -132,7 +130,6 @@ function apply(options: ActionOptions, operation: AutoOperation): Promise<Action
         content: operation.content,
         projectId: operation.projectId,
         evidence: operation.evidence,
-        sourceTexts: operation.sourceTexts,
         confidence: operation.confidence,
       })
     default:

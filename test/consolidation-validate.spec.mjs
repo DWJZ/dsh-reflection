@@ -203,10 +203,13 @@ check('update is accepted against an active Memory',
 console.log('secrets never reach storage through consolidation')
 check('a credential in the content is refused',
   review(addition({ content: 'the key is sk-abcdefghijklmnopqrstuvwxyz012345' })).reason.startsWith('secret-detected'))
-check('a credential in the cited trajectory is refused',
-  review(addition(), {
-    eventsBySeq: new Map([...EVENTS_BY_SEQ, [201, human(201, 'token ghp_abcdefghijklmnopqrstuvwxyz0123456789')]]),
-  }).reason.startsWith('secret-detected'))
+const citedSecret = review(addition(), {
+  eventsBySeq: new Map([...EVENTS_BY_SEQ, [201, human(201, 'token ghp_abcdefghijklmnopqrstuvwxyz0123456789')]]),
+})
+check('a credential in the cited trajectory does not block the fact', citedSecret.kind === 'accepted')
+check('it is redacted out of the quote instead',
+  citedSecret.operation.evidence.quote.includes('[redacted]')
+  && !citedSecret.operation.evidence.quote.includes('ghp_'))
 check('an ordinary fact is not mistaken for a secret', review(addition()).kind === 'accepted')
 
 console.log('a credential cannot hide behind the quote limit')
@@ -218,18 +221,28 @@ const withSecret = (maxChars) => review(
   addition({ evidence_event_seqs: [300] }),
   { eventsBySeq: new Map([[300, secretEvent]]), visibleSeqs: new Set([300]), fromSeq: 300, toSeq: 300, quoteMaxChars: maxChars },
 )
-check('a credential inside the quote is refused', withSecret(200).reason.startsWith('secret-detected'))
-check('a credential beyond the quote limit is refused', withSecret(40).reason.startsWith('secret-detected'))
+check('a credential inside the quote is redacted, not refused', (() => {
+  const reviewed = withSecret(200)
+  return reviewed.kind === 'accepted'
+    && reviewed.operation.evidence.quote.includes('[redacted]')
+    && !reviewed.operation.evidence.quote.includes('sk-CCCC')
+})())
+check('a credential beyond the quote limit is redacted too', (() => {
+  const reviewed = withSecret(40)
+  return reviewed.kind === 'accepted' && !reviewed.operation.evidence.quote.includes('sk-CCCC')
+})())
 // Truncating first is what makes this dangerous: the fragment that survives no
 // longer matches any detector, so a scan of the quote alone would pass.
 const naiveFragment = Array.from(secretEvent.data.content[0].text).slice(0, 12).join('')
 check('a truncation-first scan would have missed the credential',
   findSecret(naiveFragment) === undefined && findSecret(secretEvent.data.content[0].text) !== undefined)
-check('the untruncated source is what refuses it',
-  withSecret(12).reason.startsWith('secret-detected'))
-check('the accepted operation carries the untruncated source for the write to screen',
-  Array.isArray(review(addition()).operation?.sourceTexts)
-  && review(addition()).operation.sourceTexts.length > 0)
+check('redacting before truncating is what makes the short quote safe',
+  (() => {
+    const reviewed = withSecret(12)
+    return reviewed.kind === 'accepted' && !reviewed.operation.evidence.quote.includes('sk-CCCC')
+  })())
+check('the reviewed operation no longer carries untruncated source text',
+  review(addition()).operation.sourceTexts === undefined)
 
 console.log('noop is a decision, not a failure')
 const plan = validate.reviewPlan({ operations: [

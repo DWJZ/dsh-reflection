@@ -21,7 +21,7 @@
  */
 
 import { CATEGORIES, MAX_CONTENT_CHARS, charLength } from '../schema.js'
-import { findSecretIn } from '../redact.js'
+import { findSecretIn, redactText } from '../redact.js'
 import type { AddOperation, AutoOperation, EvidenceEntry, MemoryCategory, MemoryRecord, MemoryScope, TargetedOperation } from '../types/memory.js'
 import type { ObservedEvent } from '../types/trajectory.js'
 
@@ -200,9 +200,6 @@ export function reviewOperation(operation: unknown, context: ReviewContext): Rev
     confidence,
     projectId: scope === 'project' ? (target?.project_id ?? context.projectId) : undefined,
     evidence: evidence.entry,
-    // Internal only: never from the model, never persisted, never printed. It
-    // exists so the write itself can screen the untruncated text.
-    sourceTexts: evidence.sourceTexts,
   }
   if (action === 'add') return { kind: 'accepted', operation: { action: 'add', ...shared } }
   // The guard above refused every non-add action without a visible target.
@@ -241,7 +238,6 @@ function buildEvidence(
 ): { kind: 'rejected'; reason: string; code: string } | {
   kind: 'accepted'
   entry: { kind: string; session_id: string; event_seqs: number[]; quote: string; observed_at: string }
-  sourceTexts: string[]
 } {
   if (!Array.isArray(seqs) || seqs.length === 0) {
     return { kind: 'rejected', reason: 'evidence_event_seqs must be a non-empty array', code: 'evidence-missing' }
@@ -262,12 +258,12 @@ function buildEvidence(
   if (cited.length !== unique.length) {
     return { kind: 'rejected', reason: 'an evidence seq has no event behind it', code: 'evidence-missing-event' }
   }
-  // The quote is a truncation of the cited text, so screening the quote alone
-  // would miss a credential that straddles the cut: the fragment that survives
-  // can stop matching any detector while still carrying most of the secret.
-  // Both are scanned, and the untruncated text travels on so Phase 1 can screen
-  // it again at the write itself.
-  const sources = cited.flatMap(event => textBlocks(event))
+  // The quote is a truncation of the cited text. Redacting the complete text and
+  // quoting from the result is what keeps a credential that straddles the cut
+  // from surviving as a fragment no detector recognizes. What is stored is
+  // therefore a faithful quote of the redacted text, not byte-for-byte the
+  // Session's own words.
+  const sources = cited.flatMap(event => textBlocks(event)).map((text: string) => redactText(text))
   const quote = quoteFrom(sources, context.quoteMaxChars)
   if (quote === undefined) {
     return { kind: 'rejected', reason: 'the cited events carry no text to quote', code: 'no-quotable-text' }
@@ -285,7 +281,6 @@ function buildEvidence(
       quote,
       observed_at: new Date(context.now()).toISOString(),
     },
-    sourceTexts: sources,
   }
 }
 

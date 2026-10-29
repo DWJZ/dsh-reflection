@@ -337,10 +337,24 @@ const unknownTurn = buildProvenance(agentStub('session-never-observed', PROJECT_
 check('an unobserved session still yields an entry', unknownTurn.evidence?.session_id === 'session-never-observed')
 check('an unobserved session guesses no sequence', unknownTurn.evidence?.event_seqs.length === 0)
 check('an unobserved session quotes nothing', unknownTurn.evidence?.quote === '')
-check('an unobserved session offers nothing to screen', unknownTurn.sourceTexts.length === 0)
 bareTracker.dispose()
 const noSession = buildProvenance({ session: { header: {} } }, bareTracker, { evidenceQuoteMaxChars: 200 })
 check('an agent without a session yields no provenance', noSession.evidence === undefined)
+
+console.log('the provenance quote is redacted before it is stored')
+const secretTracker = createTurnTracker(ctx)
+const secretSession = { header: { id: 'session-secret' } }
+ctx.emit('session/event', secretSession, {
+  seq: 7,
+  type: 'user/message',
+  data: { content: [{ type: 'text', text: '记住，部署密钥是 sk-AAAAAAAAAAAAAAAAAAAAAAAA，请保密' }], source: { kind: 'user' } },
+})
+ctx.emit('session/event', secretSession, { seq: 8, type: 'turn/start', data: { turn: 1 } })
+const secretProvenance = buildProvenance({ session: secretSession }, secretTracker, { evidenceQuoteMaxChars: 200 })
+check('the secret is replaced in the quote',
+  secretProvenance.evidence.quote.includes('[redacted]')
+  && !secretProvenance.evidence.quote.includes('sk-AAAAAAAAAAAAAAAAAAAAAAAA'))
+secretTracker.dispose()
 
 console.log('disable disposes the runtime and keeps the command')
 const disabled = await runCommand(ctx, 'disable')
