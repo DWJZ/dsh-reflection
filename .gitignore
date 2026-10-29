@@ -10,3 +10,6 @@ lib/
 # contract draft. CONTRACT.md is the published authority; these stay on the
 # maintainer's machine, because a review of code that has since changed reads as
 # a current problem list once it is published.
+
+# Evaluation artifacts: regenerated on every run, never committed.
+eval/report-*.json

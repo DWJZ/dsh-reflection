@@ -217,6 +217,10 @@ one exclusion, because it boots a real profile and needs a harness checkout. Eac
 suite runs in its own process, one at a time, and prints the output it prints
 when run alone; the runner fails when any of them does.
 
+`eval/` holds the quality layer, separate from these gates: `npm run eval:retrieval`
+is keyless and runs on every push, while `npm run eval:behavior` makes real model
+calls and runs only on a release tag or by hand. See [eval/README.md](eval/README.md).
+
 `test/client.smoke.mjs` loads `client/client.js` outside a browser and drives the same registration calls the Client runtime makes. It builds both rows from events written the way the host half writes them, and holds the browser half to two rules: every word in a row resolves in the Chinese and the English dictionary, and no Harness Client package is requested. With `DSH_CHECKOUT` set to a checkout that has built client libraries, it also registers both definitions through the shipped Conversation registry and pushes the result through the shipped Trajectory projection, so a row the ledger stops accepting fails here rather than in the browser.
 
 The integration suite mounts this plugin and a scripted model adapter straight from the checkout by absolute path, so nothing is installed into a profile. Its four scenarios write Memory in one Session and read it in the next, prove one project cannot see another's Memory, show user Memory crossing projects, and retire a record through an explicit supersede.

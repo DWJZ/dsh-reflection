@@ -196,6 +196,9 @@ npm run test:all         # test，然后 integration
 
 `test/run-unit-specs.mjs` 自动发现套件而不是在 `package.json` 里逐个列举，所以新增一个 `*.spec.mjs` 不需要改配置。唯一排除的是 `integration.spec.mjs`，因为它要启动真实 profile 并依赖 harness 检出。每个套件跑在独立进程里、一次一个，输出与单独运行完全一致；任何一个失败，runner 就以非零退出。
 
+`eval/` 是独立于这些门禁的质量层：`npm run eval:retrieval` 不花 token，每次推送都跑；
+`npm run eval:behavior` 会真实调用模型，只在 release tag 或手动触发时跑。见 [eval/README.md](eval/README.md)。
+
 `test/client.smoke.mjs` 在浏览器之外加载 `client/client.js`，走的是 Client runtime 同一条注册路径。它按宿主半写事件的方式构造出两类事件并渲染出对应的行，同时对浏览器半守住两条规矩：行里的每一个词都能在中英文字典里查到，以及不请求任何 Harness Client 包。把 `DSH_CHECKOUT` 指向一个已构建 client 库的 checkout 时，它还会把两个定义注册进真实的 Conversation registry，并把结果推过真实的轨迹投射 —— 于是轨迹侧不再接受某一行时，失败发生在这里，而不是在浏览器里。
 
 集成套件用绝对路径直接从本 checkout 挂载插件与 scripted model adapter，因此不需要往任何 profile 里装东西。它的四个 scenario 分别在：一个 Session 写入、下一个 Session 读到；一个项目看不到另一个项目的 Memory；user Memory 跨项目可见；以及通过显式 supersede 让一条记录退役。

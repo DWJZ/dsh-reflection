@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "retrieval": {
+    "recall3": 0.9242424242424242,
+    "recall8": 0.9545454545454546,
+    "mrr": 0.9010232192050374,
+    "ndcg": 0.9085468378094179,
+    "noAnswerFalsePositives": 3,
+    "answerable": 33,
+    "noAnswer": 3
+  }
+}

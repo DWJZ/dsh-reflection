@@ -1,0 +1,108 @@
+name: eval
+
+# L1 (retrieval) is keyless and deterministic: it runs on every push and pull
+# request. L2 (behavior) makes real model calls, so it runs only on a release
+# tag or by hand. The repository is public: `pull_request` never receives
+# repository secrets, and the behavior job is deliberately not attached to it.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  retrieval:
+    name: retrieval (keyless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Retrieval regression
+        run: npm run eval:retrieval
+      - name: Summarize
+        if: always()
+        run: |
+          if [ -f eval/report-retrieval.json ]; then
+            {
+              echo '### Retrieval'
+              echo '```json'
+              node -e "const r=require('./eval/report-retrieval.json');console.log(JSON.stringify({metrics:r.metrics,byKind:r.byKind},null,2))"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-retrieval
+          path: eval/report-retrieval.json
+
+  behavior:
+    name: behavior (real model, tag or manual)
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      # The suite fails every scenario when the key is missing, but the failure
+      # would look like a product regression. Name the cause instead.
+      - name: Preflight (require DEEPSEEK_API_KEY)
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
+            echo "::error::DEEPSEEK_API_KEY is empty; configure the repository secret."
+            exit 1
+          fi
+          echo "DEEPSEEK_API_KEY present."
+
+      # Pinned on purpose: the evaluation compares runs, so the runtime that
+      # boots the plugin must not move between tags.
+      - name: Install the pinned dsh CLI
+        run: npm install --no-save --package-lock=false @deepseek-ai/dsh@0.2.1-rc.2
+
+      - name: Behavior evaluation
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DSH_CLI: node_modules/@deepseek-ai/dsh/lib/bin.js
+        run: npm run eval:behavior
+
+      - name: Summarize
+        if: always()
+        run: |
+          if [ -f eval/report-behavior.json ]; then
+            {
+              echo '### Behavior'
+              echo '```json'
+              node -e "const r=require('./eval/report-behavior.json');console.log(JSON.stringify({model:r.model,passed:r.passed,total:r.total,scenarios:r.scenarios.map(s=>({name:s.name,pass:s.pass}))},null,2))"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-behavior
+          path: eval/report-behavior.json
+
+  # A release is the only place the suite is trusted as a historical datapoint.
+  # The baseline itself is updated deliberately, by hand, never by CI.
