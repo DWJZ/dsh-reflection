@@ -118,7 +118,7 @@ envelope 的固定部分 —— 计数、文件路径、指向单条文件的说
 | `maxEvidencePerMemory` | `8` | 写者每条记录保留的 provenance 条数；更早写入的更长列表仍可读 |
 | `exportInlineMaxBytes` | `24000` | `/memory export` 内联输出上限 |
 | `evidenceQuoteMaxChars` | `200` | 存储的 quote 上限，单位是 code point |
-| `consolidation` | 见下 | 自动学习；`{ enabled, autoCommit, debounceMs, minConfidence, maxRelevantEventsPerBatch, maxTrajectoryBytesPerBatch, maxOutputTokens }` |
+| `consolidation` | 见下 | 自动学习；`{ enabled, autoCommit, debounceMs, minConfidence, maxRelevantEventsPerBatch, maxTrajectoryBytesPerBatch }` |
 
 | 子字段 | 默认 | 含义 |
 |---|---|---|
@@ -128,7 +128,8 @@ envelope 的固定部分 —— 计数、文件路径、指向单条文件的说
 | `minConfidence` | `0.8` | 低于此值的提案被丢弃，不落库 |
 | `maxRelevantEventsPerBatch` | `200` | 交给模型的最大窗口 |
 | `maxTrajectoryBytesPerBatch` | `65536` | 渲染后轨迹的 UTF-8 上限，最小 128 |
-| `maxOutputTokens` | `2048` | 模型可返回计划的上限 |
+
+规划调用没有插件侧输出上限：沿用 provider 自己的上限。
 
 
 没有 `memoryDir`：Memory 必须属于 harness，部署不能把它指到项目里。

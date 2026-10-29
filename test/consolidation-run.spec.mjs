@@ -117,7 +117,6 @@ function harness(options = {}) {
       minConfidence: 0.8,
       maxRelevantEventsPerBatch: 200,
       maxTrajectoryBytesPerBatch: 65536,
-      maxOutputTokens: 512,
 
       maxEvidencePerMemory: 8,
       quoteMaxChars: 200,

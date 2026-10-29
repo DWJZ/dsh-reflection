@@ -135,7 +135,7 @@ Set fields on the plugin row in the profile's `cordis.patch.yml`:
 | `maxEvidencePerMemory` | `8` | Provenance entries a writer keeps per record; an older, longer list still loads |
 | `exportInlineMaxBytes` | `24000` | Largest inline `/memory export` |
 | `evidenceQuoteMaxChars` | `200` | Longest stored quote, in code points |
-| `consolidation` | see below | Automatic learning; `{ enabled, autoCommit, debounceMs, minConfidence, maxRelevantEventsPerBatch, maxTrajectoryBytesPerBatch, maxOutputTokens }` |
+| `consolidation` | see below | Automatic learning; `{ enabled, autoCommit, debounceMs, minConfidence, maxRelevantEventsPerBatch, maxTrajectoryBytesPerBatch }` |
 
 | sub-field | default | meaning |
 |---|---|---|
@@ -145,7 +145,8 @@ Set fields on the plugin row in the profile's `cordis.patch.yml`:
 | `minConfidence` | `0.8` | a proposal below this is dropped rather than stored |
 | `maxRelevantEventsPerBatch` | `200` | largest window offered to the model |
 | `maxTrajectoryBytesPerBatch` | `65536` | UTF-8 ceiling for the rendered trajectory, minimum 128 |
-| `maxOutputTokens` | `2048` | cap on the plan the model may return |
+
+The plan call has no plugin-side output cap: it inherits the provider's own limit.
 
 
 There is no `memoryDir`: Memory must belong to the harness, so a deployment cannot point it at a project.

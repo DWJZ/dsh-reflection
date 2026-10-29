@@ -115,7 +115,8 @@ Memory 的物理位置不可配置：内部恒为 `path.join(resolvedDshHome, 'm
 | `minConfidence` | number | `0.8` | `[0, 1]` |
 | `maxRelevantEventsPerBatch` | integer | `200` | `>= 1` |
 | `maxTrajectoryBytesPerBatch` | integer | `65536` | `>= 128`（UTF-8 字节，作用于整条序列化 entry） |
-| `maxOutputTokens` | integer | `2048` | `>= 1` |
+
+没有 `maxOutputTokens`：规划调用不设插件侧输出上限，沿用 provider 自己的上限。
 
 **`autoCommit: false` 表示"不要自己学"**：自动路径**根本不运行** —— debounce 不排期、不构造窗口、不调用模型，因此也不花任何 token。
 

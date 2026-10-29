@@ -118,7 +118,6 @@ const answer = await callConsolidator(fakeContext([
   toSeq: 9,
   entries: [],
   existing: [],
-  maxOutputTokens: 512,
   signal: undefined,
 })
 check('the deltas are concatenated', answer.text === '{"operations":[{"action":"noop"}]}')
@@ -126,7 +125,7 @@ check('the provider usage comes back with the answer',
   answer.usage?.inputTokens === 1200 && answer.usage?.outputTokens === 34 && answer.usage?.totalTokens === 1234)
 check('the call uses the Session provider', seen[0].provider === 'deepseek-account')
 check('the call uses the Session model', seen[0].model === 'deepseek-flash')
-check('the token ceiling comes from the caller', seen[0].maxTokens === 512)
+check('no output ceiling is imposed on the consolidation call', seen[0].maxTokens === undefined)
 check('the Session id is carried for accounting', seen[0].sessionId === 'session_a')
 check('the system prompt is the policy', seen[0].system === policy.CONSOLIDATION_SYSTEM_PROMPT)
 check('exactly one message is sent', seen[0].messages.length === 1)
@@ -150,7 +149,7 @@ const withFinish = async (reason) => {
       { type: 'text-delta', index: 0, text: '{"operations":[]}' },
       { type: 'finish', reason },
     ], []), {
-      session, sessionId: 'session_a', fromSeq: 1, toSeq: 2, entries: [], existing: [], maxOutputTokens: 64,
+      session, sessionId: 'session_a', fromSeq: 1, toSeq: 2, entries: [], existing: [],
     })
     return { ok: true }
   } catch (failure) {
@@ -176,29 +175,29 @@ check('the refusal names the reason',
 console.log('a broken call fails the batch')
 const noRoute = await rejects(() => callConsolidator(fakeContext([], []), {
   session: { id: 's', requestHeader: () => undefined },
-  sessionId: 's', fromSeq: 1, toSeq: 2, entries: [], existing: [], maxOutputTokens: 16,
+  sessionId: 's', fromSeq: 1, toSeq: 2, entries: [], existing: [],
 }), 'no resolved model route')
 check('a Session without a route is refused', noRoute === true)
 check('an unstarted Session is refused', await rejects(() => callConsolidator(fakeContext([], []), {
-  session: undefined, sessionId: 's', fromSeq: 1, toSeq: 2, entries: [], existing: [], maxOutputTokens: 16,
+  session: undefined, sessionId: 's', fromSeq: 1, toSeq: 2, entries: [], existing: [],
 }), 'no resolved model route'))
 check('an unfinished stream is refused', await rejects(() => callConsolidator(fakeContext([
   { type: 'text-delta', index: 0, text: '{"operations":[]}' },
 ], []), {
-  session, sessionId: 'session_a', fromSeq: 1, toSeq: 2, entries: [], existing: [], maxOutputTokens: 64,
+  session, sessionId: 'session_a', fromSeq: 1, toSeq: 2, entries: [], existing: [],
 }), 'without a finish reason'))
 check('an empty answer is refused', await rejects(() => callConsolidator(fakeContext([
   { type: 'text-delta', index: 0, text: '   ' },
   { type: 'finish', reason: { kind: 'stop' } },
 ], []), {
-  session, sessionId: 'session_a', fromSeq: 1, toSeq: 2, entries: [], existing: [], maxOutputTokens: 64,
+  session, sessionId: 'session_a', fromSeq: 1, toSeq: 2, entries: [], existing: [],
 }), 'produced no text'))
 check('a stream that throws propagates', await rejects(() => callConsolidator({
   llm: {
     async *stream() { throw new Error('provider is down') },
   },
 }, {
-  session, sessionId: 'session_a', fromSeq: 1, toSeq: 2, entries: [], existing: [], maxOutputTokens: 64,
+  session, sessionId: 'session_a', fromSeq: 1, toSeq: 2, entries: [], existing: [],
 }), 'provider is down'))
 
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)

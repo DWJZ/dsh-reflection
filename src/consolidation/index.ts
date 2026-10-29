@@ -436,7 +436,6 @@ export function createConsolidation(options: ConsolidationOptions) {
         category: record.category,
         content: record.content,
       })),
-      maxOutputTokens: config.maxOutputTokens,
       signal: runOptions.signal,
     })
     const text = answer.text

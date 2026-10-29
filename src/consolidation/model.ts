@@ -67,8 +67,8 @@ export interface ModelTextRequest {
   system: string
   /** The user message. */
   prompt: string
-  /** Largest answer to accept. */
-  maxTokens: number
+  /** Largest answer to accept; omitted leaves the provider's own limit. */
+  maxTokens?: number | undefined
   /** Cancellation from the caller. */
   signal?: AbortSignal | undefined
   /** Source kind recorded on the message, and the name used in failure messages. */
@@ -99,8 +99,6 @@ export interface ConsolidationRequest {
   entries: readonly unknown[]
   /** Active Memory the model may target. */
   existing: readonly unknown[]
-  /** Largest answer to accept. */
-  maxOutputTokens: number
   /** Cancellation from the maintenance task. */
   signal?: AbortSignal | undefined
 }
@@ -139,7 +137,7 @@ export async function streamModelText(ctx: Context, request: ModelTextRequest): 
     model,
     system: request.system,
     messages: [userMessage],
-    maxTokens: request.maxTokens,
+    ...request.maxTokens === undefined ? {} : { maxTokens: request.maxTokens },
     sessionId: request.sessionId,
     signal: request.signal,
   })) {
@@ -187,7 +185,6 @@ export async function callConsolidator(ctx: Context, request: ConsolidationReque
     sessionId: request.sessionId,
     system: CONSOLIDATION_SYSTEM_PROMPT,
     prompt: buildRequest(request),
-    maxTokens: request.maxOutputTokens,
     ...request.signal === undefined ? {} : { signal: request.signal },
     label: 'consolidation',
   })

@@ -23,8 +23,6 @@ export interface MemoryConsolidationSettings {
   maxRelevantEventsPerBatch: number
   /** UTF-8 ceiling for the rendered trajectory. */
   maxTrajectoryBytesPerBatch: number
-  /** Cap on the plan the model may return. */
-  maxOutputTokens: number
 }
 
 /** The diagnostic sink a deployment injects. */
