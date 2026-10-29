@@ -112,6 +112,23 @@ export function parseSummaryDocument(text: string): CachedSummary | undefined {
 }
 
 /**
+ * Whether a cached summary still describes the current store and budget.
+ *
+ * A missing file, a different revision, empty text, or a summary written for a
+ * different injection budget all mean the next read should regenerate it.
+ * @param cached - the cached summary, when one exists.
+ * @param revision - the store revision the cache must describe.
+ * @param budget - the configured injection budget.
+ * @returns true when the cache is stale.
+ */
+export function summaryIsStale(cached: CachedSummary | undefined, revision: number, budget: number): boolean {
+  return cached === undefined
+    || cached.revision !== revision
+    || cached.text.trim() === ''
+    || cached.budget !== budget
+}
+
+/**
  * Read one scope's cached summary.
  * @param path - absolute path of `summary.md`.
  * @returns the summary, or undefined when the file is absent or malformed.

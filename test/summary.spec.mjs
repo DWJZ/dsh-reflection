@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const {
-  renderMemorySummary, renderSummaryDocument, parseSummaryDocument, buildSummaryPrompt,
+  renderMemorySummary, renderSummaryDocument, parseSummaryDocument, buildSummaryPrompt, summaryIsStale,
 } = await import(pathToFileURL(join(PLUGIN, 'src/summary.js')).href)
 
 let failures = 0
@@ -124,6 +124,15 @@ const titled = buildSummaryPrompt({
   budgetBytes: 1200,
 })
 check('the title appears before the body', titled.includes('构建命令') && titled.indexOf('构建命令') < titled.indexOf('pnpm run build:edge'))
+
+console.log('staleness includes the budget')
+const fresh = { text: 'a summary', revision: 3, generated_at: AT, budget: 2400 }
+check('a matching cache is fresh', summaryIsStale(fresh, 3, 2400) === false)
+check('a missing cache is stale', summaryIsStale(undefined, 3, 2400) === true)
+check('a revision mismatch is stale', summaryIsStale(fresh, 4, 2400) === true)
+check('a budget mismatch is stale', summaryIsStale(fresh, 3, 1200) === true)
+check('a cache without a budget is stale', summaryIsStale({ text: 'a summary', revision: 3, generated_at: AT }, 3, 2400) === true)
+check('empty text is stale', summaryIsStale({ ...fresh, text: '  ' }, 3, 2400) === true)
 
 if (failures > 0) {
   console.log(`\n${String(failures)} FAILURE(S)`)

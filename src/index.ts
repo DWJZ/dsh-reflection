@@ -33,7 +33,7 @@ import { buildProvenance, createTurnTracker, registerMemorySummary, registerMemo
 import { registerMemoryTools } from './tools.js'
 import { registerMemoryCommands } from './commands.js'
 import { activeRecords } from './retention.js'
-import { readSummaryDocument, renderMemorySummary } from './summary.js'
+import { readSummaryDocument, renderMemorySummary, summaryIsStale } from './summary.js'
 import { createSummaryService } from './summary-service.js'
 import { resolveEnabled, writeEnabled } from './settings.js'
 import type { PluginConfig } from './settings.js'
@@ -406,8 +406,9 @@ function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
 
   const userSummary = readSummaryDocument(deps.scopes.user.summaryPath)
   const projectSummary = projectLayout === undefined ? undefined : readSummaryDocument(projectLayout.summaryPath)
-  const stale = userSummary === undefined || userSummary.revision !== userStore.revision
-    || (projectStore !== undefined && (projectSummary === undefined || projectSummary.revision !== projectStore.revision))
+  const budget = deps.config.summaryBudgetBytes
+  const stale = summaryIsStale(userSummary, userStore.revision, budget)
+    || (projectStore !== undefined && summaryIsStale(projectSummary, projectStore.revision, budget))
   if (stale) deps.refreshSummary?.(agent)
 
   const byCategory: Record<string, number> = {}

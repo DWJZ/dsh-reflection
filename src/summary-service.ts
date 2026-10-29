@@ -12,7 +12,7 @@
  */
 
 import { readStore } from './jsonstore.js'
-import { SUMMARY_SYSTEM_PROMPT, buildSummaryPrompt, readSummaryDocument, writeSummaryDocument } from './summary.js'
+import { SUMMARY_SYSTEM_PROMPT, buildSummaryPrompt, readSummaryDocument, summaryIsStale, writeSummaryDocument } from './summary.js'
 import { streamModelText } from './consolidation/model.js'
 import { failureMessage } from './errors.js'
 import type { Context } from '@deepseek-ai/cordis'
@@ -67,8 +67,7 @@ export function createSummaryService(options: SummaryServiceOptions) {
     const store = readStore(layout.storePath)
     if (!store.records.some((record: MemoryRecord) => record.status === 'active')) return
     const cached = readSummaryDocument(layout.summaryPath)
-    if (cached !== undefined && cached.revision === store.revision && cached.text.trim() !== ''
-      && cached.budget === options.summaryBudgetBytes) return
+    if (!summaryIsStale(cached, store.revision, options.summaryBudgetBytes)) return
     const session = agent?.session
     const sessionId = session?.id
     if (typeof sessionId !== 'string' || sessionId === '') return
