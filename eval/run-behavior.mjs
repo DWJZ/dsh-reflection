@@ -120,6 +120,11 @@ async function runSession({ task, projectDir, home, model, dir }) {
     ...process.env,
     DSH_HOME: home,
     DSH_TELEMETRY_DISABLED: '1',
+    // These scenarios test Memory, not confinement. The stock policy confines
+    // shell calls with sandbox-exec, which cannot run inside a parent sandbox
+    // (macOS local runs) or on runners without a working bwrap; the failure text
+    // then leaks into answers and costs tokens.
+    DSH_PERMISSION_MODE: 'danger-full-access',
     ...MOCK ? { DSH_MEMORY_MOCK_TRIGGER: '记住' } : {},
   }
   const args = ['--import', 'tsx/esm', CLI, '--profile', 'headless', '--patch', patch, '--json', task]
@@ -138,7 +143,7 @@ async function runSession({ task, projectDir, home, model, dir }) {
     try { return [JSON.parse(line)] } catch { return [] }
   })
   const final = events.filter(event => event.type === 'final').at(-1)
-  const tools = events.filter(event => event.type === 'tool_call').map(event => String(event.name))
+  const tools = events.filter(event => event.type === 'tool_call').map(event => String(event.tool))
   const failure = final?.reason?.kind === 'error' ? String(final.reason.error?.message ?? 'model call failed') : undefined
   return { code: outcome.code, answer: String(final?.text ?? '').trim(), tools, stderr: outcome.stderr.trim(), failure }
 }
