@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "model": {
     "provider": "deepseek-official",
     "model": "deepseek-flash",
@@ -321,6 +321,41 @@
               "zeta-canary"
             ],
             "maxBytes": 1200
+          }
+        }
+      ]
+    },
+    {
+      "name": "consolidation-preference",
+      "projects": [
+        "alpha",
+        "beta"
+      ],
+      "steps": [
+        {
+          "session": {
+            "project": "alpha",
+            "task": "少用'臂'这个词，很难理解，用点常用词。"
+          },
+          "drive": true
+        },
+        {
+          "assertStore": {
+            "scope": "user",
+            "contains": [
+              "臂"
+            ]
+          }
+        },
+        {
+          "session": {
+            "project": "beta",
+            "task": "用户对用词有什么要求？只回答一句。"
+          },
+          "expect": {
+            "all": [
+              "臂"
+            ]
           }
         }
       ]
