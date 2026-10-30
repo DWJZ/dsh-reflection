@@ -33,6 +33,8 @@ export interface RejectedCandidate {
 export interface DigestCandidate {
   title: string
   content: string
+  /** Why the candidate qualifies as cross-workspace practice. */
+  scope: 'practice'
   derived_from: { project_id: string; record_id: string }[]
 }
 
@@ -49,7 +51,7 @@ export const DIGEST_SYSTEM = [
   MEMORY_TITLE_RULE,
   '',
   'Phase one: return only {"expand":["mem_..."]} with record ids from the index you want to read.',
-  'Phase two: return only {"candidates":[{"title":"...","content":"...","derived_from":[{"project_id":"...","record_id":"mem_..."}]}]}.',
+  'Phase two: return only {"candidates":[{"title":"...","content":"...","scope":"practice","derived_from":[{"project_id":"...","record_id":"mem_..."}]}]}.',
   'Return {"candidates":[]} when these updates teach nothing reusable.',
   '',
   'Keep the JSON compact: at most 6 candidates, each content under 200 characters, one JSON object,',
@@ -177,6 +179,15 @@ export function parseCandidates(text: string, allowedSources: ReadonlySet<string
     if (charLength(content) > MAX_CONTENT_CHARS) { rejected.push({ reason: `content is longer than ${String(MAX_CONTENT_CHARS)} characters`, title }); continue }
     const secret = findSecretIn([title, content])
     if (secret !== undefined) { rejected.push({ reason: `secret-detected:${secret.name}`, title }); continue }
+    const scope = candidate.scope
+    if (scope !== 'practice' && scope !== 'project') {
+      rejected.push({ reason: 'missing or unknown scope', title })
+      continue
+    }
+    if (scope === 'project') {
+      rejected.push({ reason: 'project-specific', title })
+      continue
+    }
     const sources: { project_id: string; record_id: string }[] = []
     for (const source of Array.isArray(candidate.derived_from) ? candidate.derived_from : []) {
       if (typeof source !== 'object' || source === null) continue
@@ -194,7 +205,7 @@ export function parseCandidates(text: string, allowedSources: ReadonlySet<string
     const key = normalizeContent(content)
     if (seen.has(key)) { rejected.push({ reason: 'duplicate candidate', title }); continue }
     seen.add(key)
-    accepted.push({ title, content, derived_from: sources })
+    accepted.push({ title, content, scope: 'practice', derived_from: sources })
   }
   return { accepted, rejected }
 }

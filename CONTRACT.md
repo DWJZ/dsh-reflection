@@ -742,6 +742,7 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 - **两阶段**：第一次给 summary + 记录索引（id + title），模型返回要展开的 id；第二次给这些记录的正文。展开条数不设上限。
 - **输出**：只写 `digest/pending.json` 与 `pending.md`，**不写 Memory**；pending 成功写出后才推进 `lastScanAt`。
 - **候选校验**：title / content 非空、单行、content ≤500 字符、过 secret 筛查、`derived_from` 必须指向本次提供的记录，且必须覆盖**至少两个不同 workspace**（否则记 `fewer than two workspaces` 拒绝）；只有单个 workspace 更新的窗口因此产生 0 条。
+- **候选必须标 `scope`**：`practice` 才能进 pending；`project` 记 `project-specific` 拒绝，缺 scope 同样拒绝。`practice` 指工具、调试、环境、流程、协作这类"怎么做"且换语言/领域仍成立的经验；语言/框架/架构/API/CLI/模块边界/数据模型/领域规则属于 `project`，留在项目里。
 - **apply**：`/memory digest --apply [1,3,...]`。每条候选写一条 user scope 记录（`source: 'agent'`，带 `derived_from`）；只归档候选**引用到的** project 记录，归档记录带 `comment` 说明"已提升到 user scope"。全部应用后 pending 移到 `digest/history/`，未应用的部分留在 pending。
 - 已有 pending 时再次 digest 会拒绝，避免覆盖未审的候选；`--force` 重新扫描并替换 pending。
 - **apply 只消费 pending 里的候选**（按编号选择），不接受任意记录 id；候选之外的记录不会被 apply 写入或归档。

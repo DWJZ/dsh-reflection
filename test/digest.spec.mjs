@@ -109,15 +109,17 @@ console.log('the model answers are checked')
   check('unknown expansion ids are dropped', expansion.length === 1 && expansion[0] === newRecord.id)
   const allowed = new Set([`${PROJECT_NEW}/${newRecord.id}`, `${PROJECT_OLD}/${oldRecord.id}`])
   const parsed = prompt.parseCandidates(JSON.stringify({ candidates: [
-    { title: 'A useful pattern.', content: 'Do the thing before the other thing.', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }, { project_id: PROJECT_OLD, record_id: oldRecord.id }] },
+    { title: 'A useful pattern.', content: 'Do the thing before the other thing.', scope: 'practice', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }, { project_id: PROJECT_OLD, record_id: oldRecord.id }] },
     { title: '', content: 'x', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }] },
     { title: 'Leaky.', content: 'key sk-abcdefghijklmnopqrstuvwxyz012345', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }] },
-    { title: 'Unknown source.', content: 'x', derived_from: [{ project_id: PROJECT_NEW, record_id: 'mem_missing' }] },
-    { title: 'One workspace.', content: 'x', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }] },
+    { title: 'Unknown source.', content: 'x', scope: 'practice', derived_from: [{ project_id: PROJECT_NEW, record_id: 'mem_missing' }] },
+    { title: 'One workspace.', content: 'x', scope: 'practice', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }] },
+    { title: 'A project decision.', content: 'Use Python for the RAG module.', scope: 'project', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }, { project_id: PROJECT_OLD, record_id: oldRecord.id }] },
   ] }), allowed)
   check('one candidate is accepted', parsed.accepted.length === 1, JSON.stringify(parsed))
-  check('missing title, secret, unknown source and one workspace are rejected', parsed.rejected.length === 4, JSON.stringify(parsed.rejected))
+  check('missing title, secret, unknown source, one workspace and project scope are rejected', parsed.rejected.length === 5, JSON.stringify(parsed.rejected))
   check('the one-workspace candidate says why', parsed.rejected.some(entry => entry.reason === 'fewer than two workspaces'))
+  check('the project decision says why', parsed.rejected.some(entry => entry.reason === 'project-specific'))
   check('the rejected candidate carries its title and workspace count', parsed.rejected.some(entry => entry.reason === 'fewer than two workspaces' && entry.title === 'One workspace.' && entry.workspaces === 1))
 }
 
@@ -131,7 +133,7 @@ console.log('a digest run writes pending and advances the checkpoint')
         const text = seen.length === 1
           ? JSON.stringify({ expand: [newRecord.id] })
           : JSON.stringify({ candidates: [
-            { title: 'Generate before running e2e.', content: 'Run the codegen step before the e2e suite; the suite fails on stale artifacts otherwise.', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }, { project_id: PROJECT_OLD, record_id: oldRecord.id }] },
+            { title: 'Generate before running e2e.', content: 'Run the codegen step before the e2e suite; the suite fails on stale artifacts otherwise.', scope: 'practice', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }, { project_id: PROJECT_OLD, record_id: oldRecord.id }] },
           ] })
         yield { type: 'text-delta', index: 0, text }
         yield { type: 'finish', reason: { kind: 'stop' } }
@@ -165,7 +167,7 @@ console.log('an invalid JSON answer is retried and kept for diagnosis')
     JSON.stringify({ expand: [oldRecord.id] }),
     '{"candidates":[{"title":"broken"', // malformed, as a truncated or unescaped answer would be
     JSON.stringify({ candidates: [
-      { title: 'Retried pattern.', content: 'A compact retried pattern.', derived_from: [{ project_id: PROJECT_OLD, record_id: oldRecord.id }, { project_id: PROJECT_NEW, record_id: newRecord.id }] },
+      { title: 'Retried pattern.', content: 'A compact retried pattern.', scope: 'practice', derived_from: [{ project_id: PROJECT_OLD, record_id: oldRecord.id }, { project_id: PROJECT_NEW, record_id: newRecord.id }] },
     ] }),
   ]
   const fakeCtx = {
