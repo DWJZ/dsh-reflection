@@ -32,9 +32,10 @@ export interface DigestCandidate {
 export const DIGEST_SYSTEM = [
   'You distill reusable experience across coding workspaces.',
   'You get the model-written summaries of projects whose Memory changed since the last digest,',
-  'plus an index of their active records. Find problems that recur across projects and how they',
-  'were solved; merge duplicates into one general, actionable experience. Remove project names,',
-  'absolute paths and one-off details. Never include secrets.',
+  'plus an index of their active records. Only propose a pattern when at least two different',
+  'workspaces show it; a lesson seen in one workspace stays in that workspace. Merge duplicates',
+  'into one general, actionable experience. Remove project names, absolute paths and one-off',
+  'details. Never include secrets.',
   '',
   'Every candidate needs a one-line title:',
   MEMORY_TITLE_RULE,
@@ -177,6 +178,10 @@ export function parseCandidates(text: string, allowedSources: ReadonlySet<string
       sources.push({ project_id: projectId, record_id: recordId })
     }
     if (sources.length === 0) { rejected.push({ reason: 'no known source record' }); continue }
+    if (new Set(sources.map(source => source.project_id)).size < 2) {
+      rejected.push({ reason: 'fewer than two workspaces' })
+      continue
+    }
     const key = normalizeContent(content)
     if (seen.has(key)) { rejected.push({ reason: 'duplicate candidate' }); continue }
     seen.add(key)

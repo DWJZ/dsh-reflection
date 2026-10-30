@@ -107,15 +107,17 @@ console.log('the model answers are checked')
 {
   const expansion = prompt.parseExpansion('{"expand":["mem_unknown","' + newRecord.id + '"]}', new Set([newRecord.id]))
   check('unknown expansion ids are dropped', expansion.length === 1 && expansion[0] === newRecord.id)
-  const allowed = new Set([`${PROJECT_NEW}/${newRecord.id}`])
+  const allowed = new Set([`${PROJECT_NEW}/${newRecord.id}`, `${PROJECT_OLD}/${oldRecord.id}`])
   const parsed = prompt.parseCandidates(JSON.stringify({ candidates: [
-    { title: 'A useful pattern.', content: 'Do the thing before the other thing.', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }] },
+    { title: 'A useful pattern.', content: 'Do the thing before the other thing.', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }, { project_id: PROJECT_OLD, record_id: oldRecord.id }] },
     { title: '', content: 'x', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }] },
     { title: 'Leaky.', content: 'key sk-abcdefghijklmnopqrstuvwxyz012345', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }] },
     { title: 'Unknown source.', content: 'x', derived_from: [{ project_id: PROJECT_NEW, record_id: 'mem_missing' }] },
+    { title: 'One workspace.', content: 'x', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }] },
   ] }), allowed)
   check('one candidate is accepted', parsed.accepted.length === 1, JSON.stringify(parsed))
-  check('missing title, secret and unknown source are rejected', parsed.rejected.length === 3, JSON.stringify(parsed.rejected))
+  check('missing title, secret, unknown source and one workspace are rejected', parsed.rejected.length === 4, JSON.stringify(parsed.rejected))
+  check('the one-workspace candidate says why', parsed.rejected.some(entry => entry.reason === 'fewer than two workspaces'))
 }
 
 console.log('a digest run writes pending and advances the checkpoint')
@@ -128,7 +130,7 @@ console.log('a digest run writes pending and advances the checkpoint')
         const text = seen.length === 1
           ? JSON.stringify({ expand: [newRecord.id] })
           : JSON.stringify({ candidates: [
-            { title: 'Generate before running e2e.', content: 'Run the codegen step before the e2e suite; the suite fails on stale artifacts otherwise.', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }] },
+            { title: 'Generate before running e2e.', content: 'Run the codegen step before the e2e suite; the suite fails on stale artifacts otherwise.', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }, { project_id: PROJECT_OLD, record_id: oldRecord.id }] },
           ] })
         yield { type: 'text-delta', index: 0, text }
         yield { type: 'finish', reason: { kind: 'stop' } }
@@ -138,14 +140,14 @@ console.log('a digest run writes pending and advances the checkpoint')
   const agent = { session: { id: 'session-digest', requestHeader: () => ({ config: { provider: 'p', model: 'm' } }) } }
   const liveDeps = { ...deps, llmScope: () => fakeCtx }
   const layout = digestLayout(MEMORY)
-  const outcome = await digest.runDigest(liveDeps, agent)
+  const outcome = await digest.runDigest(liveDeps, agent, { force: true })
   check('the run proposes one candidate', outcome.status === 'proposed' && outcome.candidates === 1, JSON.stringify(outcome))
   check('two model calls are made', seen.length === 2)
   check('the first call asks for expansion', seen[0].includes('Active record index'))
   check('the second call carries the expanded record', seen[1].includes('new workspace fact'))
   check('pending.json exists', existsSync(layout.pendingPath))
   const parsed = JSON.parse(readFileSync(layout.pendingPath, 'utf8'))
-  check('the pending candidate has its source', parsed.candidates[0]?.derived_from?.[0]?.record_id === newRecord.id)
+  check('the pending candidate names both workspaces', new Set(parsed.candidates[0]?.derived_from?.map(source => source.project_id)).size === 2)
   check('the checkpoint advanced', state.readDigestState(layout.statePath).lastScanAt === '2026-10-30T00:00:00.000Z')
   check('pending.md exists', existsSync(layout.pendingMarkdownPath))
   check('pending.md renders the title', readFileSync(layout.pendingMarkdownPath, 'utf8').includes('Generate before running e2e.'))
@@ -156,32 +158,13 @@ console.log('a digest run writes pending and advances the checkpoint')
   check('force rescans every summary', forced.status === 'proposed' && seen.length === 4, JSON.stringify(forced))
 }
 
-console.log('apply promotes the candidate and archives only its sources')
-{
-  const agent = { session: { id: 'session-digest-apply', requestHeader: () => ({ config: { provider: 'p', model: 'm' } }) } }
-  const applied = await digestApply.applyDigest(deps, agent)
-  check('one candidate is applied', applied.status === 'applied' && applied.applied === 1, JSON.stringify(applied))
-  check('one source is archived', applied.archived === 1)
-  const userStore = readStore(userLayout(MEMORY).storePath)
-  const promoted = userStore.records.find(record => record.title === 'Generate before running e2e.')
-  check('the user record exists', promoted !== undefined)
-  check('the user record is agent-sourced', promoted?.source === 'agent')
-  check('the user record names its source', promoted?.derived_from?.[0]?.record_id === newRecord.id)
-  const projectStore = readStore(projectLayout(MEMORY, PROJECT_NEW).storePath)
-  const archived = projectStore.records.find(record => record.id === newRecord.id)
-  check('the source record is archived', archived?.status === 'archived')
-  check('the archive comment names the promotion', String(archived?.comment).includes('Promoted to user-scope experience'))
-  check('the pending file moved to history', existsSync(join(digestLayout(MEMORY).dir, 'history')))
-  check('no pending file remains', existsSync(digestLayout(MEMORY).pendingPath) === false)
-}
-
 console.log('an invalid JSON answer is retried and kept for diagnosis')
 {
   const answers = [
     JSON.stringify({ expand: [oldRecord.id] }),
     '{"candidates":[{"title":"broken"', // malformed, as a truncated or unescaped answer would be
     JSON.stringify({ candidates: [
-      { title: 'Retried pattern.', content: 'A compact retried pattern.', derived_from: [{ project_id: PROJECT_OLD, record_id: oldRecord.id }] },
+      { title: 'Retried pattern.', content: 'A compact retried pattern.', derived_from: [{ project_id: PROJECT_OLD, record_id: oldRecord.id }, { project_id: PROJECT_NEW, record_id: newRecord.id }] },
     ] }),
   ]
   const fakeCtx = {
@@ -203,6 +186,27 @@ console.log('an invalid JSON answer is retried and kept for diagnosis')
   check('three calls were made', seenCalls.length === 3, String(seenCalls.length))
   check('the malformed answer is kept', existsSync(join(layout.dir, 'last-answer.txt')))
   check('the retry asked for compact JSON', seenCalls[2].length > 0)
+}
+
+console.log('apply promotes the candidate and archives only its sources')
+{
+  const agent = { session: { id: 'session-digest-apply', requestHeader: () => ({ config: { provider: 'p', model: 'm' } }) } }
+  const applied = await digestApply.applyDigest(deps, agent)
+  check('one candidate is applied', applied.status === 'applied' && applied.applied === 1, JSON.stringify(applied))
+  check('both sources are archived', applied.archived === 2)
+  const userStore = readStore(userLayout(MEMORY).storePath)
+  const promoted = userStore.records.find(record => record.title === 'Retried pattern.')
+  check('the user record exists', promoted !== undefined)
+  check('the user record is agent-sourced', promoted?.source === 'agent')
+  check('the user record names its sources', promoted?.derived_from?.length === 2)
+  const newStore = readStore(projectLayout(MEMORY, PROJECT_NEW).storePath)
+  const oldStore = readStore(projectLayout(MEMORY, PROJECT_OLD).storePath)
+  const archivedNew = newStore.records.find(record => record.id === newRecord.id)
+  const archivedOld = oldStore.records.find(record => record.id === oldRecord.id)
+  check('both source records are archived', archivedNew?.status === 'archived' && archivedOld?.status === 'archived')
+  check('the archive comment names the promotion', String(archivedNew?.comment).includes('Promoted to user-scope experience'))
+  check('the pending file moved to history', existsSync(join(digestLayout(MEMORY).dir, 'history')))
+  check('no pending file remains', existsSync(digestLayout(MEMORY).pendingPath) === false)
 }
 
 console.log('the pending document renders')
