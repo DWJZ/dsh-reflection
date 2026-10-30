@@ -20,7 +20,8 @@
       "summary-fidelity",
       "update-write",
       "secret-screening",
-      "consolidation-secret"
+      "consolidation-secret",
+      "cross-workspace-experience"
     ]
   }
 }
