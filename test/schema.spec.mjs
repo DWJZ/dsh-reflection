@@ -40,7 +40,7 @@ const record = (overrides = {}) => ({
   id: schema.newMemoryId(),
   scope: 'project',
   project_id: schema.newProjectId(),
-  category: 'state',
+  source: 'explicit',
   title: '该项目使用 pnpm',
   content: '该项目使用 pnpm',
   confidence: 1.0,
@@ -65,7 +65,7 @@ const rejects = (candidate, field, maxEvidencePerMemory = 8) => {
 console.log('a well-formed record is accepted')
 schema.validateMemory(record(), { maxEvidencePerMemory: 8 })
 check('project scope with an evidence list and an active status', true)
-schema.validateMemory(record({ scope: 'user', project_id: null, category: 'preference' }), { maxEvidencePerMemory: 8 })
+schema.validateMemory(record({ scope: 'user', project_id: null }), { maxEvidencePerMemory: 8 })
 check('user scope with a null project_id', true)
 schema.validateMemory(record({ status: 'superseded', superseded_by: schema.newMemoryId() }), { maxEvidencePerMemory: 8 })
 check('a superseded record naming its successor', true)
@@ -73,10 +73,6 @@ schema.validateMemory(record({ status: 'archived' }), { maxEvidencePerMemory: 8 
 check('an archived record', true)
 schema.validateMemory(record({ evidence: [] }), { maxEvidencePerMemory: 8 })
 check('a record with no evidence', true)
-for (const category of schema.CATEGORIES) {
-  schema.validateMemory(record({ category }), { maxEvidencePerMemory: 8 })
-}
-check('every declared category is accepted', true)
 for (const kind of schema.EVIDENCE_KINDS) {
   schema.validateMemory(record({ evidence: [evidence({ kind })] }), { maxEvidencePerMemory: 8 })
 }
@@ -87,12 +83,13 @@ check('a non-object is rejected', rejects('record'))
 check('an array is rejected', rejects([]))
 check('a missing id is rejected', rejects(record({ id: '' }), 'id'))
 check('an unknown scope is rejected', rejects(record({ scope: 'session' }), 'scope'))
-check('an unknown category is rejected', rejects(record({ category: 'misc' }), 'category'))
 check('an unknown status is rejected', rejects(record({ status: 'deleted' }), 'status'))
 check('a project record without project_id is rejected',
   rejects(record({ project_id: null }), 'project_id'))
 check('a user record carrying a project_id is rejected',
   rejects(record({ scope: 'user', project_id: schema.newProjectId() }), 'project_id'))
+check('an unknown source is rejected', rejects(record({ source: 'someone-else' }), 'source'))
+check('a missing source is rejected', rejects(record({ source: undefined }), 'source'))
 check('a missing title is rejected', rejects(record({ title: undefined }), 'title'))
 check('an empty title is rejected', rejects(record({ title: '   ' }), 'title'))
 check('a multi-line title is rejected', rejects(record({ title: 'first\nsecond' }), 'title'))

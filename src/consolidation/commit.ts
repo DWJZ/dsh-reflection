@@ -108,10 +108,10 @@ function apply(options: ActionOptions, operation: AutoOperation): Promise<Action
         content: operation.content,
         title: operation.title,
         scope: operation.scope,
-        category: operation.category,
         projectId: operation.projectId,
         evidence: operation.evidence,
         confidence: operation.confidence,
+        source: 'agent',
       })
     case 'update':
       // The project comes from the reviewed target, never from the model, and it
@@ -125,6 +125,7 @@ function apply(options: ActionOptions, operation: AutoOperation): Promise<Action
         projectId: operation.projectId,
         evidence: operation.evidence,
         confidence: operation.confidence,
+        source: 'agent',
       })
     case 'supersede':
       return supersedeMemory(options, {
@@ -134,6 +135,7 @@ function apply(options: ActionOptions, operation: AutoOperation): Promise<Action
         projectId: operation.projectId,
         evidence: operation.evidence,
         confidence: operation.confidence,
+        source: 'agent',
       })
     default:
       // The union says these three are all that arrive, because the validator

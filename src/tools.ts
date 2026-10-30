@@ -4,7 +4,7 @@
  * Phase 1 gives the model no way to delete or clear Memory: those are user
  * commands. Writing is confined to one tool that must be called only when the
  * user explicitly asks, and its parameter set is a union in practice — `add`
- * carries the scope and category, while `update` and `supersede` may not, because
+ * carries the scope, while `update` and `supersede` may not, because
  * they inherit both from the record they name. Rejecting contradictory arguments
  * is what keeps a restatement from silently changing which project it belongs to.
  *
@@ -17,11 +17,10 @@
 import { readStore } from './jsonstore.js'
 import { MemoryNotVisibleError, locateVisible, addMemory, supersedeMemory, updateMemory } from './actions.js'
 import { searchRecords } from './retrieval.js'
-import { CATEGORIES } from './schema.js'
 import type { ProjectEntry } from './types/identity.js'
 import type { Context } from '@deepseek-ai/cordis'
 import type { MemoryDeps } from './types/deps.js'
-import type { MemoryCategory, MemoryScope } from './types/memory.js'
+import type { MemoryScope } from './types/memory.js'
 
 /** Modes `memory_remember` accepts. */
 const MODES = Object.freeze(['add', 'update', 'supersede'])
@@ -55,10 +54,10 @@ const REMEMBER_DESCRIPTION = [
   'and do not decide on your own what is worth remembering.',
   'A fact the user asked you to remember is saved even when a file also states it, because the request is the instruction and the file is not Memory.',
   'Learning from ordinary conversation is handled after the turn by the consolidation subsystem, which reads the trajectory and decides what, if anything, becomes Memory.',
-  'mode=add creates a Memory and carries scope and category.',
+  'mode=add creates a Memory and carries scope.',
   'mode=update restates one Memory and requires target_id.',
   'mode=supersede replaces one Memory with a newer fact and requires target_id;',
-  'both inherit scope and category from the target and must not repeat them.',
+  'both inherit scope from the target and must not repeat it.',
 ].join(' ')
 
 /**
@@ -84,8 +83,6 @@ type SearchArgs = {
   query: string
   /** Which store to search, when the caller narrows it. */
   scope?: MemoryScope | undefined
-  /** Which category to search, when the caller narrows it. */
-  category?: MemoryCategory | undefined
   /** Largest number of results. */
   top_k?: number | undefined
 }
@@ -106,8 +103,6 @@ type RememberArgs = {
   title: string
   /** Which store, for `add`. */
   scope?: MemoryScope | undefined
-  /** Which category, for `add`. */
-  category?: MemoryCategory | undefined
   /** The record to act on, for `update` and `supersede`. */
   target_id?: string | undefined
 }
@@ -137,7 +132,6 @@ function searchTool(deps: MemoryDeps) {
       properties: {
         query: { type: 'string', description: 'What to look for, in the user\'s own words.' },
         scope: { type: 'string', enum: [...SEARCH_SCOPES], description: 'Defaults to all.' },
-        category: { type: 'string', enum: [...CATEGORIES], description: 'Restrict to one kind of Memory.' },
         top_k: {
           type: 'integer',
           minimum: 1,
@@ -157,7 +151,6 @@ function searchTool(deps: MemoryDeps) {
         query: args.query,
         scope: args.scope,
         projectId: project?.project_id,
-        category: args.category,
         // Schema validation is the caller's job upstream; clamping here keeps the
         // bound true even when a caller bypasses the declared maximum.
         topK: Math.min(args.top_k ?? deps.config.retrievalTopK, deps.config.retrievalTopK),
@@ -219,7 +212,6 @@ function rememberTool(deps: MemoryDeps) {
         content: { type: 'string', description: 'The fact, as one line.' },
         title: { type: 'string', description: 'One-line title; see the Memory policy for the rule.' },
         scope: { type: 'string', enum: [...WRITE_SCOPES], description: 'mode=add only.' },
-        category: { type: 'string', enum: [...CATEGORIES], description: 'mode=add only.' },
         target_id: { type: 'string', description: 'mode=update or supersede only.' },
       },
       required: ['mode', 'content', 'title'],
@@ -240,8 +232,7 @@ function rememberTool(deps: MemoryDeps) {
         ? await addMemory(options, {
           ...common,
           scope: args.scope,
-          category: args.category,
-          projectId: project?.project_id,
+            projectId: project?.project_id,
         })
         : args.mode === 'update'
           ? await updateMemory(options, { ...common, id: args.target_id, projectId: project?.project_id })
@@ -259,7 +250,7 @@ function rememberTool(deps: MemoryDeps) {
       // place a credential could be rendered.
       rawInput: {
         mode: args.mode,
-        ...args.mode === 'add' ? { scope: args.scope, category: args.category } : { target_id: args.target_id },
+        ...args.mode === 'add' ? { scope: args.scope } : { target_id: args.target_id },
       },
     }),
   }
@@ -272,11 +263,11 @@ function rememberTool(deps: MemoryDeps) {
  */
 /**
  * What `memory_remember`'s arguments are once its mode has been checked: an `add`
- * carries the scope and category it lands in, a rewrite carries the record it
+ * carries the scope it lands in, a rewrite carries the record it
  * targets. Declared so the check below can narrow rather than restate itself.
  */
 type ValidatedRememberArgs =
-  | (RememberArgs & { mode: 'add'; scope: MemoryScope; category: MemoryCategory })
+  | (RememberArgs & { mode: 'add'; scope: MemoryScope })
   | (RememberArgs & { mode: 'update' | 'supersede'; target_id: string })
 
 function requireParameterSet(args: Record<string, unknown>): asserts args is ValidatedRememberArgs {
@@ -284,16 +275,16 @@ function requireParameterSet(args: Record<string, unknown>): asserts args is Val
     if (args.target_id !== undefined) {
       throw new TypeError('dsh-reflection: memory_remember with mode=add must not carry target_id')
     }
-    if (args.scope === undefined || args.category === undefined) {
-      throw new TypeError('dsh-reflection: memory_remember with mode=add requires scope and category')
+    if (args.scope === undefined) {
+      throw new TypeError('dsh-reflection: memory_remember with mode=add requires scope')
     }
     return
   }
   if (args.target_id === undefined) {
     throw new TypeError(`dsh-reflection: memory_remember with mode=${String(args.mode)} requires target_id`)
   }
-  if (args.scope !== undefined || args.category !== undefined) {
-    throw new TypeError(`dsh-reflection: memory_remember with mode=${String(args.mode)} inherits scope and category; do not pass them`)
+  if (args.scope !== undefined) {
+    throw new TypeError(`dsh-reflection: memory_remember with mode=${String(args.mode)} inherits its scope; do not pass it`)
   }
 }
 

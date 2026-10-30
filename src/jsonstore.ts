@@ -24,7 +24,7 @@ import { withLock } from './lock.js'
 import { deriveTitle, isMemoryId, validateStoreRecords } from './schema.js'
 import { failureMessage } from './errors.js'
 import type { SweepOptions } from './types/seams.js'
-import type { EvidenceEntry, MemoryCategory, MemoryRecord, MemoryScope, MemoryStore } from './types/memory.js'
+import type { EvidenceEntry, MemoryRecord, MemoryScope, MemorySource, MemoryStore } from './types/memory.js'
 
 /** Format version this build writes; an unknown version is refused, never guessed. */
 export const STORE_SCHEMA_VERSION = 2
@@ -37,7 +37,7 @@ interface IndexRow {
   id: string
   scope: MemoryScope
   project_id?: string | null
-  category: MemoryCategory
+  source: MemorySource
   title: string
   status: string
   confidence: number
@@ -134,7 +134,7 @@ function readRecords(storePath: string, document: StoreDocument): MemoryRecord[]
       return {
         id: row.id,
         scope: row.scope,
-        category: row.category,
+        source: row.source ?? 'agent',
         title,
         status: row.status,
         content: typeof row.content === 'string' ? row.content : '',
@@ -154,7 +154,7 @@ function readRecords(storePath: string, document: StoreDocument): MemoryRecord[]
     return {
       id: row.id,
       scope: row.scope,
-      category: row.category,
+      source: row.source ?? 'agent',
       title,
       status: row.status,
       content,
@@ -479,7 +479,7 @@ function indexRowOf(record: MemoryRecord) {
   return {
     id: record.id,
     scope: record.scope,
-    category: record.category,
+    source: record.source,
     title: record.title,
     status: record.status,
     confidence: record.confidence,

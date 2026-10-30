@@ -13,36 +13,14 @@
 
 import type { MemoryRecord } from './types/memory.js'
 
-/** Category order used for display; earlier categories list first. */
-export const CATEGORY_PRIORITY = Object.freeze([
-  'preference',
-  'feedback',
-  'decision',
-  'lesson',
-  'state',
-  'reference',
-])
-
 /**
- * Rank of one category.
- * @param category - the record's category.
- * @returns the position in {@link CATEGORY_PRIORITY}; unknown categories sort last.
- */
-export function categoryRank(category: string): number {
-  const index = CATEGORY_PRIORITY.indexOf(category)
-  return index < 0 ? CATEGORY_PRIORITY.length : index
-}
-
-/**
- * Order two records for display: category priority, then most recently updated,
- * then id so the order is total and reproducible.
+ * Order two records for display: most recently updated first, then id so the
+ * order is total and reproducible.
  * @param left - one record.
  * @param right - the other record.
  * @returns a negative number when `left` sorts first.
  */
 export function compareRecords(left: MemoryRecord, right: MemoryRecord): number {
-  const byCategory = categoryRank(left.category) - categoryRank(right.category)
-  if (byCategory !== 0) return byCategory
   if (left.updated_at !== right.updated_at) return left.updated_at < right.updated_at ? 1 : -1
   return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
 }

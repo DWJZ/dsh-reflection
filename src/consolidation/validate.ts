@@ -20,9 +20,9 @@
  * Usage: `import { reviewPlan } from './validate.js'`.
  */
 
-import { CATEGORIES, MAX_CONTENT_CHARS, charLength } from '../schema.js'
+import { MAX_CONTENT_CHARS, charLength } from '../schema.js'
 import { findSecretIn, redactText } from '../redact.js'
-import type { AddOperation, AutoOperation, EvidenceEntry, MemoryCategory, MemoryRecord, MemoryScope, TargetedOperation } from '../types/memory.js'
+import type { AddOperation, AutoOperation, EvidenceEntry, MemoryRecord, MemoryScope, TargetedOperation } from '../types/memory.js'
 import type { ObservedEvent } from '../types/trajectory.js'
 
 /** Actions automatic consolidation may take. */
@@ -187,9 +187,7 @@ export function reviewOperation(operation: unknown, context: ReviewContext): Rev
   // `update` and `supersede` take their scope and category from the record they
   // act on, so a proposal cannot move a fact to another project by restating it.
   const scope = target?.scope ?? proposal.scope
-  const category = target?.category ?? proposal.category
   if (typeof scope !== 'string' || !WRITE_SCOPES.includes(scope)) return { kind: 'rejected', reason: `unknown scope ${JSON.stringify(scope ?? null)}`, code: 'unknown-scope' }
-  if (typeof category !== 'string' || !CATEGORIES.includes(category)) return { kind: 'rejected', reason: `unknown category ${JSON.stringify(category ?? null)}`, code: 'unknown-category' }
   if (scope === 'project' && (context.projectId === undefined || context.projectId === null)) {
     return { kind: 'rejected', reason: 'project-scope Memory needs a resolved project for this Session', code: 'no-resolved-project' }
   }
@@ -199,7 +197,6 @@ export function reviewOperation(operation: unknown, context: ReviewContext): Rev
 
   const shared = {
     scope: scope as MemoryScope,
-    category: category as MemoryCategory,
     title,
     content,
     confidence,

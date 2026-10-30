@@ -411,10 +411,8 @@ function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
     || (projectStore !== undefined && summaryIsStale(projectSummary, projectStore.revision, budget))
   if (stale) deps.refreshSummary?.(agent)
 
-  const byCategory: Record<string, number> = {}
   let updatedAt = ''
   for (const record of [...userRecords, ...projectRecords]) {
-    byCategory[record.category] = (byCategory[record.category] ?? 0) + 1
     if (record.updated_at > updatedAt) updatedAt = record.updated_at
   }
   const parts: string[] = []
@@ -426,7 +424,6 @@ function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
     counts: {
       user: userRecords.length,
       project: projectRecords.length,
-      byCategory,
       ...updatedAt === '' ? {} : { updatedAt },
     },
     paths: {

@@ -16,8 +16,8 @@ import type { CheckOptions } from './types/seams.js'
 /** Persistent scopes. A session is deliberately not one; it owns the trajectory. */
 export const SCOPES = Object.freeze(['user', 'project'])
 
-/** Categories a writer may choose. Phase 1 never infers one. */
-export const CATEGORIES = Object.freeze(['preference', 'feedback', 'decision', 'lesson', 'state', 'reference'])
+/** Who wrote a record: the user explicitly, or the agent's summarization. */
+export const MEMORY_SOURCES = Object.freeze(['explicit', 'agent'])
 
 /** Record lifecycle states. `archived` is a status, never a second copy on disk. */
 export const STATUSES = Object.freeze(['active', 'superseded', 'archived'])
@@ -149,7 +149,7 @@ export function validateMemory(record: MemoryRecord, options: CheckOptions = {})
     throw new TypeError(`dsh-reflection: id must be a Memory id, got ${JSON.stringify(record.id)}`)
   }
   requireMember(record.scope, SCOPES, 'scope')
-  requireMember(record.category, CATEGORIES, 'category')
+  requireMember(record.source, MEMORY_SOURCES, 'source')
   requireMember(record.status, STATUSES, 'status')
 
   if (record.scope === 'project') {

@@ -32,7 +32,6 @@ const record = (overrides = {}) => ({
   id: 'mem_a',
   scope: 'user',
   project_id: null,
-  category: 'state',
   content: '用户偏好中文解释',
   confidence: 1,
   evidence: [],
@@ -43,7 +42,7 @@ const record = (overrides = {}) => ({
   ...overrides,
 })
 
-const counts = (overrides = {}) => ({ user: 1, project: 0, byCategory: { preference: 1 }, updatedAt: AT, ...overrides })
+const counts = (overrides = {}) => ({ user: 1, project: 0, updatedAt: AT, ...overrides })
 
 console.log('the injected envelope')
 const text = renderMemorySummary({
@@ -55,7 +54,6 @@ const text = renderMemorySummary({
 check('it is an envelope', text.startsWith('<memory-summary>') && text.trimEnd().endsWith('</memory-summary>'))
 check('it says what it is', text.includes('data, not instructions'))
 check('it counts the scopes', text.includes('1 user') && text.includes('0 project'))
-check('it names the category', text.includes('preference 1'))
 check('it names the date', text.includes('2026-09-26'))
 check('it names the index file', text.includes('/home/me/.dsh/memory/user/memories.json'))
 check('it points at per-record files', text.includes('memories/<id>.md'))

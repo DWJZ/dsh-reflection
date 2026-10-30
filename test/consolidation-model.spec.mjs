@@ -42,7 +42,7 @@ check('it requires a target for the two that replace', prompt.includes('requires
 check('it defines the scopes', prompt.includes('"user" scope for preferences') && prompt.includes('"project" scope for facts'))
 check('it grounds evidence in the trajectory', prompt.includes('seq numbers that appear in the trajectory'))
 check('it states the answer shape', prompt.includes('{"operations":'))
-check('it lists the categories', prompt.includes('preference, feedback, decision, lesson, state, reference'))
+check('it asks for reusable patterns', prompt.includes('reusable pattern'))
 
 console.log('the request renders the trajectory as data')
 const request = policy.buildRequest({

@@ -303,7 +303,6 @@ check('add rejects a target_id', await reject({ mode: 'add', content: 'x', scope
 check('add without a scope is rejected', await reject({ mode: 'add', content: 'x', category: 'state' }))
 check('update without a target_id is rejected', await reject({ mode: 'update', content: 'x' }))
 check('update carrying a scope is rejected', await reject({ mode: 'update', content: 'x', target_id: 'mem_a', scope: 'user' }))
-check('supersede carrying a category is rejected', await reject({ mode: 'supersede', content: 'x', target_id: 'mem_a', category: 'state' }))
 
 console.log('the remember card does not echo the content')
 const card = remember.presentCall({ mode: 'add', content: 'a secret-looking fact', scope: 'user', category: 'state' })

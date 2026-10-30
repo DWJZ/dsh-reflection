@@ -31,7 +31,7 @@ const record = (overrides = {}) => ({
   id: 'mem_a',
   scope: 'user',
   project_id: null,
-  category: 'state',
+  source: 'explicit',
   title: 'a fact',
   content: 'a fact',
   confidence: 1,
@@ -101,10 +101,10 @@ check('folding does not touch stored content', record({ content: 'PNPM' }).conte
 
 console.log('filters')
 const filtered = [
-  record({ id: 'mem_user', scope: 'user', category: 'preference', content: '偏好 pnpm' }),
-  record({ id: 'mem_project', scope: 'project', project_id: 'proj_a', category: 'decision', content: '项目使用 pnpm' }),
-  record({ id: 'mem_archived', scope: 'project', project_id: 'proj_a', category: 'state', content: '旧记录 pnpm', status: 'archived' }),
-  record({ id: 'mem_superseded', scope: 'project', project_id: 'proj_a', category: 'state', content: '过期 pnpm', status: 'superseded', superseded_by: 'mem_project' }),
+  record({ id: 'mem_user', scope: 'user', content: '偏好 pnpm' }),
+  record({ id: 'mem_project', scope: 'project', project_id: 'proj_a', content: '项目使用 pnpm' }),
+  record({ id: 'mem_archived', scope: 'project', project_id: 'proj_a', content: '旧记录 pnpm', status: 'archived' }),
+  record({ id: 'mem_superseded', scope: 'project', project_id: 'proj_a', content: '过期 pnpm', status: 'superseded', superseded_by: 'mem_project' }),
 ]
 check('an archived record never matches', !idsOf(searchRecords(filtered, { query: 'pnpm' })).includes('mem_archived'))
 check('a superseded record never matches', !idsOf(searchRecords(filtered, { query: 'pnpm' })).includes('mem_superseded'))
@@ -112,8 +112,6 @@ check('scope user filters to user Memory',
   idsOf(searchRecords(filtered, { query: 'pnpm', scope: 'user' })).join(',') === 'mem_user')
 check('scope project filters to project Memory',
   idsOf(searchRecords(filtered, { query: 'pnpm', scope: 'project' })).join(',') === 'mem_project')
-check('a category filter is exact',
-  idsOf(searchRecords(filtered, { query: 'pnpm', category: 'decision' })).join(',') === 'mem_project')
 check('top_k truncates the list but not the total',
   searchRecords(filtered, { query: 'pnpm', topK: 1 }).results.length === 1
   && searchRecords(filtered, { query: 'pnpm', topK: 1 }).total === 2)

@@ -72,7 +72,7 @@ check('the record is in the project store', projectRecords().length === 1)
 const stored = projectRecords()[0]
 check('the content is stored', stored.content === 'The project uses pnpm.')
 check('the scope is stored', stored.scope === 'project')
-check('the category is stored', stored.category === 'state')
+check('the source is the agent', stored.source === 'agent')
 check('the project is attached', stored.project_id === PROJECT)
 check('the status is active', stored.status === 'active')
 check('the created time comes from the injected clock',

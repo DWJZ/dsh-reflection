@@ -150,14 +150,6 @@ const spaced = await actions.addMemory(clocked(2000), {
   projectId: PROJECT_A,
 })
 check('a whitespace-only difference is still a duplicate', spaced.reason === 'duplicate')
-const otherCategory = await actions.addMemory(clocked(3000), {
-  content: '该项目使用 pnpm',
-  scope: 'project',
-  category: 'decision',
-  projectId: PROJECT_A,
-})
-check('the same text in another category is a different Memory', otherCategory.action === 'added')
-
 console.log('duplicate_case_difference_not_noop')
 await actions.addMemory(clocked(4000), {
   content: 'Model-X is the encoder',
@@ -195,7 +187,6 @@ check('the view shows the restated fact', viewOf(PROJECT_A).includes('该项目�
 console.log('update_target_scope_inherited and update_target_category_inherited')
 check('scope is inherited from the target', after.scope === 'project')
 check('project is inherited from the target', after.project_id === PROJECT_A)
-check('category is inherited from the target', after.category === 'state')
 
 console.log('provenance is capped, keeping the newest')
 for (let index = 0; index < 4; index += 1) {
@@ -241,7 +232,6 @@ check('the index hides the retired fact', !recordsOf(PROJECT_A).some(record => r
 console.log('supersede_target_scope_inherited and supersede_target_category_inherited')
 check('scope is inherited from the target', replacement.scope === retired.scope)
 check('project is inherited from the target', replacement.project_id === retired.project_id)
-check('category is inherited from the target', replacement.category === retired.category)
 
 console.log('stale_target_fails_conflict')
 check('superseding a retired Memory is a conflict',
@@ -373,8 +363,7 @@ check('an empty content is refused',
   await rejects(() => actions.addMemory(clocked(119000), { content: '   ', scope: 'user', category: 'state' }), 'must not be empty'))
 check('an over-long content is refused',
   await rejects(() => actions.addMemory(clocked(120000), { content: '记'.repeat(501), scope: 'user', category: 'state' }), 'at most 500'))
-check('an unknown category is refused',
-  await rejects(() => actions.addMemory(clocked(121000), { content: 'x', scope: 'user', category: 'misc' }), 'category must be one of'))
+check('a new record is sourced to the user', stored.source === 'explicit')
 
 console.log('forget keeps the supersession chain sound')
 const chainA = await actions.addMemory(clocked(122000), {

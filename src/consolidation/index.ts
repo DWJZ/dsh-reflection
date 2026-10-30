@@ -494,7 +494,6 @@ export function createConsolidation(options: ConsolidationOptions) {
         existing: existing.map(record => ({
           id: record.id,
           scope: record.scope,
-          category: record.category,
           content: record.content,
         })),
         signal: runOptions.signal,
@@ -544,7 +543,6 @@ export function createConsolidation(options: ConsolidationOptions) {
           accepted: reviewed.accepted.map(operation => ({
             action: operation.action,
             scope: operation.scope,
-            category: operation.category,
             content: operation.content,
             confidence: operation.confidence,
             // Only an update or a supersede names a record; `add` has none.
@@ -824,7 +822,7 @@ export function describeOutcome(outcome: RunAudit): string {
     ]
     for (const operation of outcome.accepted) {
       const target = operation.target_id === undefined ? '' : ` -> ${operation.target_id}`
-      lines.push(`- ${operation.action} [${operation.scope}/${operation.category}] ${operation.content}${target}`)
+      lines.push(`- ${operation.action} [${operation.scope}] ${operation.content}${target}`)
       lines.push(`  confidence ${String(operation.confidence)}; evidence ${operation.evidence_event_seqs.join(',')}; quote: ${operation.quote}`)
     }
     for (const rejected of outcome.rejected) lines.push(`- dropped (${String(rejected.index)}): ${rejected.reason}`)

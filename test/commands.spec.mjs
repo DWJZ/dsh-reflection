@@ -69,7 +69,7 @@ const record = (overrides = {}) => ({
   id: memoryId(),
   scope: 'user',
   project_id: null,
-  category: 'state',
+  source: 'explicit',
   title: 'a fact',
   content: 'a fact',
   confidence: 1,
@@ -109,8 +109,8 @@ const userMemoryText = () => {
 
 // Seed the user scope with two records.
 const userScope = userLayout(MEMORY)
-const pnpmRecord = record({ content: '用户偏好 pnpm', category: 'preference' })
-const langRecord = record({ content: '用户偏好中文解释', category: 'preference' })
+const pnpmRecord = record({ content: '用户偏好 pnpm' })
+const langRecord = record({ content: '用户偏好中文解释' })
 await withStore({ ...userScope, lockTimeoutMs: 3000, staleLockMs: 60000 }, current => ({
   changed: true,
   records: [...current.records, pnpmRecord, langRecord],
@@ -170,14 +170,11 @@ console.log('list')
 const listed = await run(ctx, 'list', agent)
 check('list succeeds', listed.kind === 'success')
 check('list shows a stored record', textOf(listed).includes('用户偏好 pnpm'))
-check('list shows the id and scope', textOf(listed).includes(pnpmRecord.id) && textOf(listed).includes('[user/preference]'))
+check('list shows the id and scope', textOf(listed).includes(pnpmRecord.id) && textOf(listed).includes('[user]'))
 check('list shows both records', textOf(listed).includes('用户偏好中文解释'))
 check('list accepts --user', (await run(ctx, 'list --user', agent)).kind === 'success')
 check('list accepts --project', (await run(ctx, 'list --project', agent)).kind === 'success')
 check('an invalid --status is refused', (await run(ctx, 'list --status bogus', agent)).kind === 'error')
-check('an invalid --category is refused', (await run(ctx, 'list --category bogus', agent)).kind === 'error')
-check('a category filter narrows the list',
-  textOf(await run(ctx, 'list --category decision', agent)).includes('No Memory matches'))
 check('--status all includes non-active records', (await run(ctx, 'list --status all', agent)).kind === 'success')
 
 console.log('search')

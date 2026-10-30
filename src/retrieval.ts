@@ -13,7 +13,7 @@
  * @module dsh-reflection/retrieval
  */
 
-import type { MemoryCategory, MemoryRecord, MemoryScope } from './types/memory.js'
+import type { MemoryRecord, MemoryScope } from './types/memory.js'
 /** Score contributed by each matching signal. */
 export const SCORE = Object.freeze({
   /** The whole query appears in the content. */
@@ -47,8 +47,6 @@ export interface SearchRequest {
   query: string
   /** Which store to search; `all` looks in both. */
   scope?: MemoryScope | 'all' | undefined
-  /** Which category to search, when the caller narrows it. */
-  category?: MemoryCategory | undefined
   /** The Session's project, for the project store. */
   projectId?: string | null | undefined
   /** Largest number of results. */
@@ -114,7 +112,6 @@ export function scoreRecord(record: MemoryRecord, query: string) {
  * @param request.query - what to look for.
  * @param request.scope - `user`, `project`, or `all`; defaults to `all`.
  * @param request.projectId - the caller's project, used to drop foreign records.
- * @param request.category - an exact category filter.
  * @param request.topK - the largest result list.
  * @returns the ranked matches and how many matched in total.
  */
@@ -124,7 +121,7 @@ export function searchRecords(records: MemoryRecord[], request: SearchRequest) {
   const visible = records.filter((record: MemoryRecord) => record.status === 'active'
     && (request.projectId === undefined || record.scope === 'user' || record.project_id === request.projectId)
     && (scope === 'all' || record.scope === scope)
-    && (request.category === undefined || record.category === request.category))
+)
 
   const matches = visible
     .map((record: MemoryRecord) => ({ record, score: scoreRecord(record, query) }))
@@ -139,7 +136,6 @@ export function searchRecords(records: MemoryRecord[], request: SearchRequest) {
     results: matches.slice(0, Math.max(0, topK)).map(match => ({
       id: match.record.id,
       scope: match.record.scope,
-      category: match.record.category,
       content: match.record.content,
       updated_at: match.record.updated_at,
       score: match.score,

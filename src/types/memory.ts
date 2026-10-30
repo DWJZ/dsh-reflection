@@ -12,8 +12,8 @@
 /** Which store a record lives in. */
 export type MemoryScope = 'user' | 'project'
 
-/** The closed set `schema.js` accepts. */
-export type MemoryCategory = 'preference' | 'feedback' | 'decision' | 'lesson' | 'state' | 'reference'
+/** Who wrote the record: the user explicitly, or the agent's own summarization. */
+export type MemorySource = 'explicit' | 'agent'
 
 /** One citation behind a record, built by the plugin rather than supplied by a model. */
 export interface EvidenceEntry {
@@ -39,7 +39,8 @@ export interface EvidenceEntry {
 export interface MemoryRecord {
   id: string
   scope: MemoryScope
-  category: MemoryCategory
+  /** Whether the user asked for it or the agent summarized it. */
+  source: MemorySource
   /**
    * One-line title used by the index and the summary. The detail lives in
    * `content`; a reader scans titles before deciding to read a record.
@@ -116,14 +117,14 @@ export interface AddInput {
   title: string
   /** Which store it belongs to. */
   scope: MemoryScope
-  /** What kind of record it is. */
-  category: MemoryCategory
   /** Required for a project record. */
   projectId?: string | null | undefined
   /** The citation to attach. Its quote is redacted before it is stored. */
   evidence?: EvidenceEntry | undefined
   /** Automatic writes state their reviewed confidence; explicit ones do not. */
   confidence?: number | undefined
+  /** Who writes it; defaults to the explicit path. */
+  source?: MemorySource | undefined
 }
 
 /** What `update` and `supersede` need: the record to act on, and the new content. */
@@ -136,6 +137,8 @@ export interface TargetedInput extends RecordTarget {
   evidence?: EvidenceEntry | undefined
   /** Automatic writes state their reviewed confidence; explicit ones do not. */
   confidence?: number | undefined
+  /** Who writes it; defaults to the explicit path. */
+  source?: MemorySource | undefined
 }
 
 /**
@@ -194,8 +197,6 @@ export interface AddOperation {
   title: string
   /** Which store it belongs to. */
   scope: MemoryScope
-  /** What kind of record it is. */
-  category: MemoryCategory
   /** Required for a project record. */
   projectId?: string | null | undefined
   /** The citation to attach. Its quote is redacted before it is stored. */
@@ -218,8 +219,6 @@ export interface TargetedOperation {
    * taken from the model, so a proposal cannot move a fact between projects.
    */
   scope?: MemoryScope | undefined
-  /** What kind of record the reviewed target is. Inherited, as `scope` is. */
-  category?: MemoryCategory | undefined
   /** Inherited from the reviewed target; never taken from the model. */
   projectId?: string | null | undefined
   /** The citation to accumulate. Its quote is redacted before it is stored. */

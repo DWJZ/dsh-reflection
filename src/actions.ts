@@ -85,7 +85,6 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
     const duplicate = store.records.find((record: MemoryRecord) => record.status === 'active'
       && record.scope === input.scope
       && record.project_id === projectId
-      && record.category === input.category
       && normalizeContent(record.content) === normalizeContent(content))
     if (duplicate !== undefined) return { changed: false, result: { action: 'noop', id: duplicate.id, reason: 'duplicate' } }
 
@@ -94,9 +93,9 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
       id: newMemoryId(),
       scope: input.scope,
       project_id: input.scope === 'project' ? input.projectId : null,
-      category: input.category,
       title,
       content,
+      source: input.source ?? 'explicit',
       confidence: requireConfidence(input.confidence, PHASE1_CONFIDENCE),
       evidence: input.evidence === undefined ? [] : [input.evidence],
       created_at: at,
@@ -133,6 +132,7 @@ export async function updateMemory(options: ActionOptions, input: TargetedInput)
       ...current,
       title,
       content,
+      source: input.source ?? 'explicit',
       evidence,
       confidence: requireConfidence(input.confidence, EXPLICIT_UPDATE_CONFIDENCE),
       updated_at: nowIso(options),
@@ -170,9 +170,9 @@ export async function supersedeMemory(options: ActionOptions, input: TargetedInp
       id: newMemoryId(),
       scope: current.scope,
       project_id: current.project_id,
-      category: current.category,
       title,
       content,
+      source: input.source ?? 'explicit',
       confidence: requireConfidence(input.confidence, PHASE1_CONFIDENCE),
       evidence: input.evidence === undefined ? [] : [input.evidence],
       created_at: at,

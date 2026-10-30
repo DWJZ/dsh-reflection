@@ -18,7 +18,6 @@
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { writeAtomic } from './jsonstore.js'
-import { CATEGORY_PRIORITY } from './retention.js'
 import type { MemoryRecord } from './types/memory.js'
 
 /**
@@ -203,7 +202,7 @@ export function buildSummaryPrompt(input: {
     const text = record.content.length > RECORD_CHARS_IN_PROMPT
       ? `${record.content.slice(0, RECORD_CHARS_IN_PROMPT)}…`
       : record.content
-    const block = `\n- ${record.category} · ${record.updated_at.slice(0, 10)} · ${record.title}\n${text}`
+    const block = `\n- ${record.updated_at.slice(0, 10)} · ${record.title}\n${text}`
     const size = Buffer.byteLength(block, 'utf8')
     if (bytes + size > PROMPT_BUDGET_BYTES) break
     lines.push(block)
@@ -228,19 +227,14 @@ export function buildSummaryPrompt(input: {
  */
 export function renderMemorySummary(input: {
   summaryText?: string | undefined
-  counts: { user: number; project: number; byCategory: Record<string, number>; updatedAt?: string | undefined }
+  counts: { user: number; project: number; updatedAt?: string | undefined }
   paths: { user: string; project?: string | undefined }
   budgetBytes: number
 }): string {
   const { counts } = input
   const total = counts.user + counts.project
   if (total === 0) return ''
-  const categories = CATEGORY_PRIORITY
-    .filter(category => (counts.byCategory[category] ?? 0) > 0)
-    .map(category => `${category} ${String(counts.byCategory[category])}`)
-    .join(' · ')
-  const scopeLine = [`${String(counts.user)} user`, `${String(counts.project)} project`].join(' · ')
-  const countsLine = categories === '' ? `${scopeLine} active` : `${scopeLine} active — ${categories}`
+  const countsLine = `${String(counts.user)} user · ${String(counts.project)} project active`
   const updatedLine = counts.updatedAt === undefined ? '' : ` · updated ${counts.updatedAt.slice(0, 10)}`
   const files = [input.paths.user, input.paths.project].filter((path): path is string => path !== undefined)
   const envelope = (body: string) => [

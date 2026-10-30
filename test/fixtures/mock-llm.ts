@@ -49,9 +49,9 @@ const TRIGGER = process.env.DSH_MEMORY_MOCK_TRIGGER ?? '记住'
 /** Arguments for a direct `memory_remember` call. */
 const REMEMBER_ARGS = process.env.DSH_MEMORY_MOCK_REMEMBER ?? JSON.stringify({
   mode: 'add',
+  title: '该项目使用 pnpm',
   content: '该项目使用 pnpm',
   scope: 'project',
-  category: 'state',
 })
 
 /** Whether this run must search first and then supersede what it finds. */
@@ -199,10 +199,11 @@ class MemoryMockAdapter extends LlmAdapter {
       }
       const target = firstMemoryId(transcript)
       if (target !== undefined) {
-        const replacement = JSON.parse(REMEMBER_ARGS) as { content: string }
+        const replacement = JSON.parse(REMEMBER_ARGS) as { content: string; title?: string }
         yield * call('memory_remember', {
           mode: 'supersede',
           target_id: target,
+          title: replacement.title ?? 'The updated fact.',
           content: replacement.content,
         }, 'call_dsh_memory_supersede')
         return

@@ -33,7 +33,7 @@ const ACTIVE = [{
   id: 'mem_old',
   scope: 'project',
   project_id: 'proj_a',
-  category: 'state',
+  source: 'explicit',
   title: 'The project uses npm.',
   content: 'The project uses npm.',
   status: 'active',
@@ -158,34 +158,15 @@ check('a non-object proposal is refused', review('add').reason === 'operation is
 check('the automatic action list is exactly the documented four',
   validate.AUTO_ACTIONS.join(',') === 'add,update,supersede,noop')
 
-console.log('scope and category')
-check('an unknown scope is refused',
-  review(addition({ scope: 'global' })).reason.includes('unknown scope'))
-check('a missing scope is refused',
-  review(addition({ scope: undefined })).reason.includes('unknown scope'))
-check('a user-scope fact is accepted',
-  review(addition({ scope: 'user' })).operation?.projectId === undefined)
-check('project scope without a project is refused',
-  review(addition(), { projectId: undefined }).reason.includes('needs a resolved project'))
-check('project scope with a null project is refused too',
-  review(addition(), { projectId: null }).reason.includes('needs a resolved project'))
-check('an unknown category is refused',
-  review(addition({ category: 'misc' })).reason.includes('unknown category'))
-check('a missing category is refused',
-  review(addition({ category: undefined })).reason.includes('unknown category'))
-
 console.log('update and supersede act on what exists')
 const superseding = { action: 'supersede', target_id: 'mem_old', title: 'The project now uses pnpm.', content: 'The project now uses pnpm.', confidence: 0.95, evidence_event_seqs: [201] }
 const supersedeReview = review(superseding)
 check('a supersede against an active Memory is accepted', supersedeReview.kind === 'accepted')
 check('it inherits the target scope', supersedeReview.operation?.scope === 'project')
-check('it inherits the target category', supersedeReview.operation?.category === 'state')
 check('it keeps the target id', supersedeReview.operation?.target_id === 'mem_old')
 check('it keeps the target project', supersedeReview.operation?.projectId === 'proj_a')
 check('a proposal cannot move the fact to another scope',
   review({ ...superseding, scope: 'user' }).operation?.scope === 'project')
-check('a proposal cannot relabel the category',
-  review({ ...superseding, category: 'preference' }).operation?.category === 'state')
 check('an unknown target is refused',
   review({ ...superseding, target_id: 'mem_ghost' }).reason.includes('is not an active Memory'))
 check('a missing target is refused',

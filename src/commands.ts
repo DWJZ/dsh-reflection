@@ -17,7 +17,7 @@ import { readStore } from './jsonstore.js'
 import { bindProject, listProjects, relinkProject } from './registry.js'
 import { searchRecords } from './retrieval.js'
 import { archiveMemory, clearScope, forgetMemory } from './actions.js'
-import { CATEGORIES, STATUSES } from './schema.js'
+import { STATUSES } from './schema.js'
 import { describeOutcome as describeConsolidation } from './consolidation/index.js'
 import { isAbsolute, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -42,7 +42,7 @@ export function registerMemoryCommands(ctx: Context, deps: MemoryDeps) {
     // The command API exposes one prompt: this hint. It carries the argument shapes
     // for the subcommands whose flags are not guessable from the name alone.
     input: {
-      hint: 'help · list [--user|--project] [--status …] [--category …] · search <query> [--top n] · '
+      hint: 'help · list [--user|--project] [--status …] · search <query> [--top n] · '
         + 'inspect|archive|forget <id> · clear --user|--project --yes · export [--format md|json] · '
         + 'consolidate [--dry-run] · enable|disable · project bind|relink|show',
     },
@@ -96,19 +96,14 @@ async function listCommand(deps: MemoryDeps, invocation: CommandInvocation, flag
   if (status !== 'all' && !STATUSES.includes(status)) {
     return error(`dsh-reflection: --status must be one of ${[...STATUSES, 'all'].join(', ')}`)
   }
-  const category = typeof flags.get('category') === 'string' ? flags.get('category') : undefined
-  if (category !== undefined && !CATEGORIES.includes(category)) {
-    return error(`dsh-reflection: --category must be one of ${CATEGORIES.join(', ')}`)
-  }
   const records = selectedScopes(deps, invocation, flags)
   const rows = records
     .filter(entry => (status === 'all' || entry.record.status === status))
-    .filter(entry => category === undefined || entry.record.category === category)
     .sort((left, right) => left.record.updated_at < right.record.updated_at ? 1 : -1)
 
   if (rows.length === 0) return ok('No Memory matches.')
   const shown = rows.slice(0, LIST_PAGE)
-  const lines = shown.map(({ record }) => `${record.id}  [${record.scope}/${record.category}] ${record.status}  ${record.content}`)
+  const lines = shown.map(({ record }) => `${record.id}  [${record.scope}] ${record.status}  ${record.content}`)
   const footer = rows.length > shown.length ? `\n\nShowing ${String(shown.length)} of ${String(rows.length)}.` : ''
   return ok(`${lines.join('\n')}${footer}`)
 }
@@ -133,7 +128,7 @@ async function searchCommand(deps: MemoryDeps, invocation: CommandInvocation, re
     { query, scope, projectId: project?.project_id, topK },
   )
   if (found.results.length === 0) return ok(`No Memory matches "${query}".`)
-  return ok(found.results.map(hit => `${hit.id}  [${hit.scope}/${hit.category}]  ${hit.content}`).join('\n'))
+  return ok(found.results.map(hit => `${hit.id}  [${hit.scope}]  ${hit.content}`).join('\n'))
 }
 
 /**
@@ -262,7 +257,7 @@ async function exportCommand(deps: MemoryDeps, invocation: CommandInvocation, fl
   const rows = selectedScopes(deps, invocation, flags)
   const text = format === 'json'
     ? `${JSON.stringify(rows.map(entry => entry.record), null, 2)}\n`
-    : rows.map(entry => `${entry.record.id}\t${entry.record.scope}\t${entry.record.category}\t${entry.record.status}\t${entry.record.content}`).join('\n').concat(rows.length === 0 ? '' : '\n')
+    : rows.map(entry => `${entry.record.id}\t${entry.record.scope}\t${entry.record.status}\t${entry.record.content}`).join('\n').concat(rows.length === 0 ? '' : '\n')
   const bytes = Buffer.byteLength(text, 'utf8')
   if (bytes > deps.config.exportInlineMaxBytes) {
     return error([
@@ -448,7 +443,7 @@ function resolvePath(cwd: string | null | undefined, path: string): string {
 }
 
 /** Flags that consume the following token as their value. */
-const VALUE_FLAGS = new Set(['status', 'category', 'top', 'format'])
+const VALUE_FLAGS = new Set(['status', 'top', 'format'])
 
 /**
  * Split one raw command input into tokens, honouring quoting.
