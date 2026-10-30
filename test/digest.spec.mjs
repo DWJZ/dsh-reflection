@@ -194,7 +194,13 @@ console.log('an invalid JSON answer is retried and kept for diagnosis')
 console.log('apply promotes the candidate and archives only its sources')
 {
   const agent = { session: { id: 'session-digest-apply', requestHeader: () => ({ config: { provider: 'p', model: 'm' } }) } }
-  const applyDeps = { ...deps, refreshSummary: () => new Promise(() => {}) }
+  let fullRefreshCalls = 0
+  let userRefreshCalls = 0
+  const applyDeps = {
+    ...deps,
+    refreshSummary: () => { fullRefreshCalls += 1; return Promise.resolve() },
+    refreshUserSummary: () => { userRefreshCalls += 1; return new Promise(() => {}) },
+  }
   const applied = await digestApply.applyDigest(applyDeps, agent)
   check('one candidate is applied', applied.status === 'applied' && applied.applied === 1, JSON.stringify(applied))
   check('both sources are archived', applied.archived === 2)
@@ -209,6 +215,7 @@ console.log('apply promotes the candidate and archives only its sources')
   const archivedOld = oldStore.records.find(record => record.id === oldRecord.id)
   check('both source records are archived', archivedNew?.status === 'archived' && archivedOld?.status === 'archived')
   check('the archive comment names the promotion', String(archivedNew?.comment).includes('Promoted to user-scope experience'))
+  check('apply refreshed the user summary only', userRefreshCalls === 1 && fullRefreshCalls === 0)
   check('the pending file moved to history', existsSync(join(digestLayout(MEMORY).dir, 'history')))
   check('no pending file remains', existsSync(digestLayout(MEMORY).pendingPath) === false)
 }

@@ -150,6 +150,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
     consolidationEnabled: () => settings.consolidation.enabled,
     llmScope: () => llmScope ?? undefined,
     refreshSummary: (agent: MemoryAgent) => summaryService.refresh(agent),
+    refreshUserSummary: (agent: MemoryAgent) => summaryService.refreshUser(agent),
     consolidate: (
       agent: MemoryAgent,
       runOptions?: { dryRun?: boolean; trigger?: string; signal?: AbortSignal | undefined },

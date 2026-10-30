@@ -190,6 +190,19 @@ export function createSummaryService(options: SummaryServiceOptions) {
     },
 
     /**
+     * Bring only the user-scope summary up to date.
+     *
+     * The digest apply promotes into user scope and leaves project summaries
+     * alone; a project that archived records will refresh its own summary when a
+     * session next reads it.
+     * @param agent - the agent whose route the call reuses.
+     * @returns fulfillment once the user summary is current or the schedule ends.
+     */
+    async refreshUser(agent: MemoryAgent): Promise<void> {
+      await schedule(agent, options.scopes.user, 'user')
+    },
+
+    /**
      * Wait for every refresh still running.
      * @returns fulfillment once none is executing.
      */

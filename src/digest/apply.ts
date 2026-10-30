@@ -137,11 +137,11 @@ export async function applyDigest(
       deps.logger.warn(`dsh-reflection: could not record the digest apply audit: ${failureMessage(failure)}`)
     }
   }
-  // The writes are done; regenerating two summaries is a model call and can take
-  // minutes. Leave it to the read path (which refreshes stale summaries) and
-  // return, or the command looks hung.
+  // The writes are done; regenerating the user summary is a model call and can
+  // take minutes. Only user scope moved, so leave project summaries to the read
+  // path and return instead of making the command look hung.
   try {
-    const refresh = deps.refreshSummary?.(agent)
+    const refresh = deps.refreshUserSummary?.(agent)
     if (refresh !== undefined) {
       void refresh.catch(failure => deps.logger.warn(`dsh-reflection: summaries were not refreshed after apply: ${failureMessage(failure)}`))
     }
