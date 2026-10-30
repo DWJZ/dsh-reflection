@@ -72,6 +72,7 @@ const addition = (overrides = {}) => ({
   action: 'add',
   scope: 'project',
   category: 'state',
+  title: 'The project uses pnpm for dependencies.',
   content: 'The project uses pnpm.',
   confidence: 0.94,
   evidence_event_seqs: [201, 203],
@@ -84,6 +85,9 @@ check('the operation is accepted', accepted.kind === 'accepted', JSON.stringify(
 check('the scope is kept', accepted.operation?.scope === 'project')
 check('the project is attached', accepted.operation?.projectId === 'proj_a')
 check('the confidence is kept', accepted.operation?.confidence === 0.94)
+check('the title is kept', accepted.operation?.title === 'The project uses pnpm for dependencies.')
+check('a missing title is rejected', review(addition({ title: undefined })).code === 'title-missing')
+check('a multi-line title is rejected', review(addition({ title: 'two\nlines' })).code === 'title-not-single-line')
 
 console.log('provenance is built, not accepted')
 check('the cited seqs are recorded in order',
@@ -171,7 +175,7 @@ check('a missing category is refused',
   review(addition({ category: undefined })).reason.includes('unknown category'))
 
 console.log('update and supersede act on what exists')
-const superseding = { action: 'supersede', target_id: 'mem_old', content: 'The project now uses pnpm.', confidence: 0.95, evidence_event_seqs: [201] }
+const superseding = { action: 'supersede', target_id: 'mem_old', title: 'The project now uses pnpm.', content: 'The project now uses pnpm.', confidence: 0.95, evidence_event_seqs: [201] }
 const supersedeReview = review(superseding)
 check('a supersede against an active Memory is accepted', supersedeReview.kind === 'accepted')
 check('it inherits the target scope', supersedeReview.operation?.scope === 'project')

@@ -349,6 +349,7 @@ async function seed({ home, scope, projectId, records }) {
   for (const record of records) {
     const result = await addMemory(options, {
       content: record.content,
+      title: record.title ?? record.content.slice(0, 60),
       scope,
       category: record.category ?? 'state',
       ...scope === 'project' ? { projectId } : {},
@@ -389,7 +390,7 @@ async function supersede({ home, scope, projectId, from, to }) {
   const storePath = scope === 'user' ? userLayout(join(home, 'memory')).storePath : projectLayout(join(home, 'memory'), projectId).storePath
   const record = readStore(storePath).records.find(entry => entry.status === 'active' && entry.content === from)
   if (record === undefined) throw new Error(`eval: no active record to supersede: ${JSON.stringify(from)}`)
-  await supersedeMemory(options, { id: record.id, content: to, ...scope === 'project' ? { projectId } : {} })
+  await supersedeMemory(options, { id: record.id, content: to, title: to.slice(0, 60), ...scope === 'project' ? { projectId } : {} })
 }
 
 /**

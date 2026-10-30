@@ -21,7 +21,7 @@ import { readStore, withStore } from './jsonstore.js'
 import type { StoreMutation } from './jsonstore.js'
 import { withLock } from './lock.js'
 import { findSecretIn } from './redact.js'
-import { MAX_CONTENT_CHARS, charLength, deriveTitle, newMemoryId, normalizeContent, validateMemory } from './schema.js'
+import { MAX_CONTENT_CHARS, charLength, newMemoryId, normalizeContent, validateMemory } from './schema.js'
 import type { ActionInput, ActionOptions, AddInput, ArchiveInput, EvidenceEntry, MemoryRecord, MemoryScope, MemoryStore, RecordTarget, ScopeInput, ScopeLayout, TargetedInput, TombstoneEntry } from './types/memory.js'
 import { failureMessage } from './errors.js'
 
@@ -73,7 +73,8 @@ function requireConfidence(value: unknown, fallback: number) {
 export async function addMemory(options: ActionOptions, input: AddInput) {
   const layout = requireLayout(options, input.scope, input.projectId)
   const content = requireContent(input.content)
-  const screened = screen(content, input.evidence?.quote)
+  const title = requireTitle(input.title)
+  const screened = screen(title, content, input.evidence?.quote)
   if (screened !== undefined) return noop(`secret-detected:${screened}`)
 
   // Two branches return different results, so the result type is stated here.
@@ -94,7 +95,7 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
       scope: input.scope,
       project_id: input.scope === 'project' ? input.projectId : null,
       category: input.category,
-      title: input.title === undefined ? deriveTitle(content) : requireTitle(input.title),
+      title,
       content,
       confidence: requireConfidence(input.confidence, PHASE1_CONFIDENCE),
       evidence: input.evidence === undefined ? [] : [input.evidence],
@@ -121,7 +122,8 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
 export async function updateMemory(options: ActionOptions, input: TargetedInput) {
   const located = locateVisible(options, input.id, input.projectId)
   const content = requireContent(input.content)
-  const screened = screen(content, input.evidence?.quote)
+  const title = requireTitle(input.title)
+  const screened = screen(title, content, input.evidence?.quote)
   if (screened !== undefined) return noop(`secret-detected:${screened}`)
 
   return apply(options, located.layout, (store: MemoryStore) => {
@@ -129,7 +131,7 @@ export async function updateMemory(options: ActionOptions, input: TargetedInput)
     const evidence = accumulate(current.evidence, input.evidence, options.maxEvidencePerMemory)
     const record = {
       ...current,
-      title: input.title === undefined ? deriveTitle(content) : requireTitle(input.title),
+      title,
       content,
       evidence,
       confidence: requireConfidence(input.confidence, EXPLICIT_UPDATE_CONFIDENCE),
@@ -157,7 +159,8 @@ export async function updateMemory(options: ActionOptions, input: TargetedInput)
 export async function supersedeMemory(options: ActionOptions, input: TargetedInput) {
   const located = locateVisible(options, input.id, input.projectId)
   const content = requireContent(input.content)
-  const screened = screen(content, input.evidence?.quote)
+  const title = requireTitle(input.title)
+  const screened = screen(title, content, input.evidence?.quote)
   if (screened !== undefined) return noop(`secret-detected:${screened}`)
 
   return apply(options, located.layout, (store: MemoryStore) => {
@@ -168,7 +171,7 @@ export async function supersedeMemory(options: ActionOptions, input: TargetedInp
       scope: current.scope,
       project_id: current.project_id,
       category: current.category,
-      title: input.title === undefined ? deriveTitle(content) : requireTitle(input.title),
+      title,
       content,
       confidence: requireConfidence(input.confidence, PHASE1_CONFIDENCE),
       evidence: input.evidence === undefined ? [] : [input.evidence],
@@ -402,8 +405,8 @@ async function recordTombstone(options: ActionOptions, entry: TombstoneEntry) {
  * @param persistedQuote - the quote that will be stored.
  * @returns the matching rule name, or undefined when everything is clean.
  */
-function screen(content: string, persistedQuote: string | undefined): string | undefined {
-  return findSecretIn([content, persistedQuote])?.name
+function screen(title: string, content: string, persistedQuote: string | undefined): string | undefined {
+  return findSecretIn([title, content, persistedQuote])?.name
 }
 
 /**

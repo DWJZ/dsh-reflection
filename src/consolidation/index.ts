@@ -485,7 +485,7 @@ export function createConsolidation(options: ConsolidationOptions) {
 
       const projectId = options.projectFor(agent)?.project_id ?? null
       const existing = activeMemory(projectId)
-      const answer = await callModel({
+      const request = {
         session,
         sessionId,
         fromSeq: cursor + 1,
@@ -498,16 +498,31 @@ export function createConsolidation(options: ConsolidationOptions) {
           content: record.content,
         })),
         signal: runOptions.signal,
-      })
-      const text = answer.text
+      }
+      let answer = await callModel(request)
+      let plan = parsePlan(answer.text)
+      let usage = answer.usage
+      let modelRaw = answer.text
+      if (planNeedsTitle(plan)) {
+        // The plan is sent back once with the missing-title complaint, so a valid
+        // plan is not rejected for a fixable omission. A retry that fails keeps
+        // the first plan; the review then rejects the untitled operations.
+        try {
+          const retried = await callModel({ ...request, note: TITLE_RETRY_NOTE })
+          plan = parsePlan(retried.text)
+          modelRaw = retried.text
+          usage = sumUsage(usage, retried.usage)
+        } catch (failure) {
+          logger?.warn(`dsh-reflection: the consolidation title retry failed: ${failureMessage(failure)}`)
+        }
+      }
       // The usage belongs to the call, not the window, so it rides along with the
       // window fields every audit construction already spreads.
       const extras = auditBase as { usage?: ConsolidationUsage | undefined; model_raw?: string }
-      extras.usage = answer.usage
+      extras.usage = usage
       // The raw answer can quote the conversation, so it is kept only when a person
       // asks for it with a dry run.
-      if (runOptions.dryRun === true && runOptions.showRaw === true) extras.model_raw = answer.text
-      const plan = parsePlan(text)
+      if (runOptions.dryRun === true && runOptions.showRaw === true) extras.model_raw = modelRaw
       const reviewed = reviewPlan(plan, {
         fromSeq: cursor + 1,
         toSeq: toSeq,
@@ -744,6 +759,43 @@ function mergeEvents(backfilled: readonly ObservedEvent[], observed: readonly Ob
  * @param rejected - the rejections recorded during review.
  * @returns `{ rejected_reasons }` when there were any, otherwise an empty object.
  */
+/** The instruction that sends a title-less plan back to the model once. */
+const TITLE_RETRY_NOTE = 'Your previous plan omitted a title for one or more operations. Every add, update and supersede needs a one-line title. Return the full plan again, with a title on each operation.'
+
+/**
+ * Whether a plan has an operation that must carry a title but does not.
+ * @param plan - the parsed plan.
+ * @returns true when a corrective retry is needed.
+ */
+function planNeedsTitle(plan: { operations?: unknown[] }): boolean {
+  if (!Array.isArray(plan.operations)) return false
+  return plan.operations.some((operation) => {
+    if (typeof operation !== 'object' || operation === null) return false
+    const action = (operation as { action?: unknown }).action
+    if (action !== 'add' && action !== 'update' && action !== 'supersede') return false
+    const title = (operation as { title?: unknown }).title
+    return typeof title !== 'string' || title.trim() === ''
+  })
+}
+
+/**
+ * Add two calls' usage, keeping what the provider reported.
+ * @param left - the first call's usage.
+ * @param right - the second call's usage.
+ * @returns the sum, or whichever side exists.
+ */
+function sumUsage(left: ConsolidationUsage | undefined, right: ConsolidationUsage | undefined): ConsolidationUsage | undefined {
+  if (left === undefined) return right
+  if (right === undefined) return left
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    ...left.totalTokens === undefined && right.totalTokens === undefined
+      ? {}
+      : { totalTokens: (left.totalTokens ?? 0) + (right.totalTokens ?? 0) },
+  }
+}
+
 function countRejections(
   rejected: readonly { code?: unknown }[],
 ): { rejected_reasons?: Record<string, number> } {

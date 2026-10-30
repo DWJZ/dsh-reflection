@@ -15,6 +15,7 @@
  */
 
 import type { ConsolidationRequest } from './model.js'
+import { MEMORY_TITLE_RULE } from '../title.js'
 import type { TrajectoryEntry } from '../types/trajectory.js'
 
 /** The instruction that frames one consolidation call. */
@@ -50,9 +51,13 @@ export const CONSOLIDATION_SYSTEM_PROMPT = [
   'Evidence must reference seq numbers that appear in the trajectory you were given.',
   '',
   'Answer with one JSON object, and nothing else:',
-  '{"operations":[{"action":"add","scope":"project","category":"state","content":"The project uses pnpm.","confidence":0.94,"evidence_event_seqs":[190,198]}]}',
+  '{"operations":[{"action":"add","scope":"project","category":"state","title":"The project uses pnpm for dependencies.","content":"The project uses pnpm.","confidence":0.94,"evidence_event_seqs":[190,198]}]}',
   'Allowed categories: preference, feedback, decision, lesson, state, reference.',
   'confidence is a number in [0,1] reflecting how well the trajectory grounds the fact.',
+  '',
+  'Every add, update and supersede must include a one-line title:',
+  MEMORY_TITLE_RULE,
+  'A plan with an operation missing its title is invalid and will be sent back.',
 ].join('\n')
 
 /**
@@ -81,6 +86,7 @@ export function buildRequest(request: ConsolidationRequest): string {
     request.existing.length === 0 ? '(none)' : JSON.stringify(request.existing),
     '',
     'Decide the operations for this trajectory.',
+    ...request.note === undefined ? [] : ['', request.note],
   ]
   return parts.join('\n')
 }

@@ -268,7 +268,7 @@ console.log('boots the shipped profile with the plugin mounted from this checkou
 const first = await runSession({
   project: PROJECT_A,
   task: '记住，这个项目使用 pnpm',
-  remember: { mode: 'add', content: '该项目使用 pnpm', scope: 'project', category: 'state' },
+  remember: { mode: 'add', title: '该项目使用 pnpm', content: '该项目使用 pnpm', scope: 'project', category: 'state' },
 })
 check('the run answers through the scripted model', first.code === 0, first.stderr.slice(0, 400))
 check('no harness failure was reported', !first.stderr.includes('UNHANDLED'), first.stderr.slice(0, 400))
@@ -373,7 +373,7 @@ console.log('27.3 user Memory reaches another project')
 const userWrite = await runSession({
   project: PROJECT_A,
   task: '记住，我偏好中文解释',
-  remember: { mode: 'add', content: '用户偏好中文解释，技术术语保留英文', scope: 'user', category: 'preference' },
+  remember: { mode: 'add', title: '用户偏好中文解释', content: '用户偏好中文解释，技术术语保留英文', scope: 'user', category: 'preference' },
 })
 check('the user Memory is written', userWrite.code === 0, userWrite.stderr.slice(0, 400))
 
@@ -381,7 +381,7 @@ console.log('27.2 another project sees its own Memory only')
 const projectBWrite = await runSession({
   project: PROJECT_B,
   task: '记住，这个项目使用 npm',
-  remember: { mode: 'add', content: '该项目使用 npm', scope: 'project', category: 'state' },
+  remember: { mode: 'add', title: '该项目使用 npm', content: '该项目使用 npm', scope: 'project', category: 'state' },
 })
 check('the second project records its own fact', projectBWrite.code === 0, projectBWrite.stderr.slice(0, 400))
 const projectBSession = await runSession({ project: PROJECT_B, task: '装个依赖' })
@@ -403,7 +403,7 @@ console.log('27.4 an explicit supersede retires the record it replaces')
 const targetWrite = await runSession({
   project: PROJECT_C,
   task: '记住，这个项目使用 npm',
-  remember: { mode: 'add', content: '该项目使用 npm', scope: 'project', category: 'state' },
+  remember: { mode: 'add', title: '该项目使用 npm', content: '该项目使用 npm', scope: 'project', category: 'state' },
 })
 check('the record to supersede is written', targetWrite.code === 0, targetWrite.stderr.slice(0, 400))
 const seeded = recordsOf(projectIdFor(PROJECT_C)).find(record => record.content === '该项目使用 npm')
@@ -412,7 +412,7 @@ check('the record to supersede exists and is active',
 const superseded = await runSession({
   project: PROJECT_C,
   task: '记住，我们已经迁移到 pnpm',
-  remember: { mode: 'supersede', content: '该项目已迁移到 pnpm' },
+  remember: { mode: 'supersede', title: '该项目已迁移到 pnpm', content: '该项目已迁移到 pnpm' },
   supersede: true,
   // Phase 1 retrieval is keyword-based, so the scripted search asks for a term
   // the stored record actually contains.
@@ -447,7 +447,7 @@ const reducing = await runSession({
   project: COMPACT_PROJECT,
   task: `记住这个项目用 cargo 构建 ${BULK}`,
   // `mode` is what the Memory tool schema takes; `action` is the consolidation vocabulary.
-  remember: { mode: 'add', content: FACT, scope: 'user', category: 'preference' },
+  remember: { mode: 'add', title: 'A user preference.', content: FACT, scope: 'user', category: 'preference' },
   compactDrive: true,
 })
 const compactSteps = readFileSync(`${reducing.log}.compact`, 'utf8')

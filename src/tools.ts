@@ -102,6 +102,8 @@ type RememberArgs = {
   mode: 'add' | 'update' | 'supersede'
   /** The fact to store or the replacement text. */
   content: string
+  /** One-line title following the Memory policy's rule. */
+  title: string
   /** Which store, for `add`. */
   scope?: MemoryScope | undefined
   /** Which category, for `add`. */
@@ -215,11 +217,12 @@ function rememberTool(deps: MemoryDeps) {
       properties: {
         mode: { type: 'string', enum: [...MODES], description: 'add creates, update restates, supersede replaces.' },
         content: { type: 'string', description: 'The fact, as one line.' },
+        title: { type: 'string', description: 'One-line title; see the Memory policy for the rule.' },
         scope: { type: 'string', enum: [...WRITE_SCOPES], description: 'mode=add only.' },
         category: { type: 'string', enum: [...CATEGORIES], description: 'mode=add only.' },
         target_id: { type: 'string', description: 'mode=update or supersede only.' },
       },
-      required: ['mode', 'content'],
+      required: ['mode', 'content', 'title'],
       additionalProperties: false,
     },
     output: { ...JSON_OUTPUT, schema: { type: 'object' } },
@@ -230,6 +233,7 @@ function rememberTool(deps: MemoryDeps) {
       const provenance = deps.evidenceFor(exec.agent) ?? { evidence: undefined }
       const common = {
         content: args.content,
+        title: args.title,
         evidence: provenance.evidence,
       }
       const result = args.mode === 'add'

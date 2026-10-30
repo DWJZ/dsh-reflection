@@ -106,6 +106,7 @@ function apply(options: ActionOptions, operation: AutoOperation): Promise<Action
     case 'add':
       return addMemory(options, {
         content: operation.content,
+        title: operation.title,
         scope: operation.scope,
         category: operation.category,
         projectId: operation.projectId,
@@ -120,6 +121,7 @@ function apply(options: ActionOptions, operation: AutoOperation): Promise<Action
       return updateMemory(options, {
         id: operation.target_id,
         content: operation.content,
+        title: operation.title,
         projectId: operation.projectId,
         evidence: operation.evidence,
         confidence: operation.confidence,
@@ -128,6 +130,7 @@ function apply(options: ActionOptions, operation: AutoOperation): Promise<Action
       return supersedeMemory(options, {
         id: operation.target_id,
         content: operation.content,
+        title: operation.title,
         projectId: operation.projectId,
         evidence: operation.evidence,
         confidence: operation.confidence,

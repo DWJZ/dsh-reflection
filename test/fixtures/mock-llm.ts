@@ -171,6 +171,7 @@ class MemoryMockAdapter extends LlmAdapter {
           action: 'add',
           scope: 'project',
           category: 'state',
+          title: 'The project uses pnpm.',
           content: LEARNED,
           confidence: 0.95,
           evidence_event_seqs: [seq],

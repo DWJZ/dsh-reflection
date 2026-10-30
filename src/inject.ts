@@ -16,6 +16,7 @@
  */
 
 import { truncateChars } from './schema.js'
+import { MEMORY_TITLE_RULE } from './title.js'
 import { redactText } from './redact.js'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Provenance } from './types/memory.js'
@@ -63,6 +64,9 @@ export const MEMORY_POLICY_TEXT = [
   '',
   'Writing is separate. Call `memory_remember` only when the user explicitly asks for something to be remembered, saved, or kept for later sessions — "记住", "记一下", "remember this", "save this to memory".',
   'Do not call it because information looks important, durable, useful, or likely to matter later: consolidation reads the finished turn and decides what becomes Memory.',
+  '',
+  'When you write a record, give it a title:',
+  MEMORY_TITLE_RULE,
 ].join('\n')
 
 /**

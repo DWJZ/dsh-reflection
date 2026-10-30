@@ -345,9 +345,9 @@ Phase 1 不承诺通用 PII detector，只在 prompt 与文档层面要求不主
 
 | mode | 必填 | 禁止出现 | 继承 |
 |---|---|---|---|
-| `add` | `content`, `scope`, `category` | `target_id` | — |
-| `update` | `target_id`, `content` | `scope`, `category` | `scope` / `project_id` / `category` 全继承 target |
-| `supersede` | `target_id`, `content` | `scope`, `category` | 同上 |
+| `add` | `content`, `title`, `scope`, `category` | `target_id` | — |
+| `update` | `target_id`, `content`, `title` | `scope`, `category` | `scope` / `project_id` / `category` 全继承 target |
+| `supersede` | `target_id`, `content`, `title` | `scope`, `category` | 同上 |
 
 update / supersede 不允许模型再传 scope / category，避免矛盾参数。
 
@@ -616,9 +616,20 @@ acquire store lock
 
 ### 12.3 title 的写入
 
-- 新记录：调用方提供 `title`；未提供时从 `content` 派生（单行、最多 100 字符）。
-- 旧记录：读取时派生，不回写正文。
-- title 不设长度上限；它是索引层的一行，不是正文的截断。
+**必填，不再从 content 派生。** 写入方（`memory_remember`、consolidation、后续 digest）必须提供 title；工具 schema 与 consolidation 计划都把它列为必填字段。
+
+规则（同时写进 policy 段与 consolidation system prompt）：
+
+```text
+title = <条件/场景> + <对象/结论> + <做法> (+ <原因>)
+What 必须；When/Where、How、Why 有则写；Who 默认是用户/本项目，省略。
+一行、不加句号、不重复 content 的开头；不设长度上限。
+```
+
+- `memory_remember`：模型不填 title 就是无效调用，由工具校验打回。
+- consolidation：计划里任一 add/update/supersede 缺 title 时，先把整份计划连同"缺少 title"的提示重问一次；仍缺则拒绝该操作，audit 记 `title-missing`，不落库。
+- 旧记录：POC 阶段用一次性脚本按同一规则重新生成过 title（不属于插件命令，不随仓库发布）；没有兼容分支。
+- title 不属于正文，截断只作用于 `content`。
 
 ---
 

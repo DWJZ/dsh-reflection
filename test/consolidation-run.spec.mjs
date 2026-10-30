@@ -151,7 +151,7 @@ function harness(options = {}) {
 }
 
 /** The plan that stores one project fact. */
-const addProjectFact = seqs => `{"operations":[{"action":"add","scope":"project","category":"state","content":"The project uses pnpm.","confidence":0.94,"evidence_event_seqs":${JSON.stringify(seqs)}}]}`
+const addProjectFact = seqs => `{"operations":[{"action":"add","scope":"project","category":"state","title":"The project uses pnpm for dependencies.","content":"The project uses pnpm.","confidence":0.94,"evidence_event_seqs":${JSON.stringify(seqs)}}]}`
 
 /**
  * Observe a whole trajectory into a collector.
@@ -205,7 +205,7 @@ console.log('a committed write refreshes the summary')
   const refreshed = []
   const harnessed = harness({
     sessionId: 'session_refresh',
-    modelAnswer: '{"operations":[{"action":"add","scope":"project","category":"state","content":"The summary refresh test uses pnpm.","confidence":0.94,"evidence_event_seqs":[1]}]}',
+    modelAnswer: '{"operations":[{"action":"add","scope":"project","category":"state","title":"The summary refresh test uses pnpm.","content":"The summary refresh test uses pnpm.","confidence":0.94,"evidence_event_seqs":[1]}]}',
     refreshSummary: async agent => { refreshed.push(agent?.session?.id) },
   })
   observe(harnessed, [human(1, '这个项目用 pnpm')])
@@ -486,8 +486,8 @@ console.log('scope decides where a fact lands')
   const harnessed = harness({
     sessionId: 'session_scope',
     modelAnswer: JSON.stringify({ operations: [
-      { action: 'add', scope: 'user', category: 'preference', content: 'Prefer Chinese.', confidence: 0.9, evidence_event_seqs: [60] },
-      { action: 'add', scope: 'project', category: 'decision', content: 'The audit log belongs in the Trajectory tab.', confidence: 0.9, evidence_event_seqs: [60] },
+      { action: 'add', scope: 'user', category: 'preference', title: 'Prefer Chinese answers.', content: 'Prefer Chinese.', confidence: 0.9, evidence_event_seqs: [60] },
+      { action: 'add', scope: 'project', category: 'decision', title: 'The audit log belongs in the Trajectory tab.', content: 'The audit log belongs in the Trajectory tab.', confidence: 0.9, evidence_event_seqs: [60] },
     ] }),
   })
   observe(harnessed, [human(60, '以后用中文，audit log 放 Trajectory tab')])
@@ -506,8 +506,8 @@ console.log('project scope without a project is dropped, not committed')
     sessionId: 'session_noproject',
     projectless: true,
     modelAnswer: JSON.stringify({ operations: [
-      { action: 'add', scope: 'project', category: 'state', content: 'Project fact.', confidence: 0.9, evidence_event_seqs: [70] },
-      { action: 'add', scope: 'user', category: 'preference', content: 'Prefer Chinese for explanations.', confidence: 0.9, evidence_event_seqs: [70] },
+      { action: 'add', scope: 'project', category: 'state', title: 'A project fact.', content: 'Project fact.', confidence: 0.9, evidence_event_seqs: [70] },
+      { action: 'add', scope: 'user', category: 'preference', title: 'Prefer Chinese for explanations.', content: 'Prefer Chinese for explanations.', confidence: 0.9, evidence_event_seqs: [70] },
     ] }),
   })
   observe(harnessed, [human(70, 'some turn')])
@@ -524,7 +524,7 @@ console.log('a low-confidence proposal never reaches the store')
   const harnessed = harness({
     sessionId: 'session_unsure',
     modelAnswer: JSON.stringify({ operations: [
-      { action: 'add', scope: 'user', category: 'state', content: 'Maybe the user prefers X.', confidence: 0.4, evidence_event_seqs: [80] },
+      { action: 'add', scope: 'user', category: 'state', title: 'The user may prefer X.', content: 'Maybe the user prefers X.', confidence: 0.4, evidence_event_seqs: [80] },
     ] }),
   })
   observe(harnessed, [human(80, 'maybe?')])
@@ -536,7 +536,7 @@ console.log('a low-confidence proposal never reaches the store')
 
 console.log('a dry run neither writes nor advances')
 {
-  const dryPlan = '{"operations":[{"action":"add","scope":"project","category":"state","content":"Dry-run only fact.","confidence":0.94,"evidence_event_seqs":[0]}]}'
+  const dryPlan = '{"operations":[{"action":"add","scope":"project","category":"state","title":"A dry-run fact.","content":"Dry-run only fact.","confidence":0.94,"evidence_event_seqs":[0]}]}'
   const harnessed = harness({ sessionId: 'session_dry', modelAnswer: dryPlan })
   observe(harnessed, [human(0, '这个项目用 pnpm')])
   const outcome = await harnessed.consolidation.consolidate(harnessed.agent, { dryRun: true })
@@ -676,7 +676,7 @@ console.log('a run that did nothing writes no audit')
 console.log('operation counts mean one thing each')
 {
   // A duplicate add is skipped by commit, and that is what skipped must report.
-  const countsPlan = '{"operations":[{"action":"add","scope":"project","category":"state","content":"A fact for the counts test.","confidence":0.9,"evidence_event_seqs":[0]}]}'
+  const countsPlan = '{"operations":[{"action":"add","scope":"project","category":"state","title":"A fact for the counts test.","content":"A fact for the counts test.","confidence":0.9,"evidence_event_seqs":[0]}]}'
   const harnessed = harness({ sessionId: 'session_counts', modelAnswer: countsPlan })
   observe(harnessed, [human(0, '这个项目用 pnpm')])
   const first = await harnessed.consolidation.consolidate(harnessed.agent)
@@ -780,5 +780,32 @@ console.log('a Session that produced nothing is not an error')
 }
 
 rmSync(ROOT, { recursive: true, force: true })
+console.log('a plan without titles is sent back once')
+{
+  const titleless = '{"operations":[{"action":"add","scope":"project","category":"state","content":"Title retry fact.","confidence":0.94,"evidence_event_seqs":[1]}]}'
+  const titled = '{"operations":[{"action":"add","scope":"project","category":"state","title":"A titled retry fact.","content":"Title retry fact.","confidence":0.94,"evidence_event_seqs":[1]}]}'
+  const harnessed = harness({
+    sessionId: 'session_title_retry',
+    modelAnswer: request => request.note === undefined ? titleless : titled,
+  })
+  observe(harnessed, [human(1, '这个项目用 pnpm')])
+  const outcome = await harnessed.consolidation.consolidate(harnessed.agent)
+  check('the model was asked twice', harnessed.calls.length === 2, String(harnessed.calls.length))
+  check('the retry names the missing title', String(harnessed.calls[1]?.note ?? '').includes('title'))
+  check('the titled plan is committed', outcome.operations.add === 1, JSON.stringify(outcome.operations))
+  check('the title reached the store',
+    readStore(projectLayout(MEMORY, PROJECT).storePath).records.some(record => record.status === 'active' && record.title === 'A titled retry fact.'))
+}
+
+console.log('a plan that still has no title is rejected')
+{
+  const titleless = '{"operations":[{"action":"add","scope":"project","category":"state","content":"Still titleless fact.","confidence":0.94,"evidence_event_seqs":[1]}]}'
+  const harnessed = harness({ sessionId: 'session_title_missing', modelAnswer: titleless })
+  observe(harnessed, [human(1, '这个项目用 pnpm')])
+  const outcome = await harnessed.consolidation.consolidate(harnessed.agent)
+  check('the operation was rejected', outcome.operations.add === 0 && outcome.rejected === 1, JSON.stringify(outcome))
+  check('the missing title is the reason', outcome.rejected_reasons?.['title-missing'] === 1, JSON.stringify(outcome.rejected_reasons))
+}
+
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)
 process.exit(failures === 0 ? 0 : 1)

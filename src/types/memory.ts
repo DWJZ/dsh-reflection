@@ -112,8 +112,8 @@ export interface ActionOptions {
 export interface AddInput {
   /** The fact to store. */
   content: string
-  /** One-line title; derived from the content when omitted. */
-  title?: string | undefined
+  /** One-line title; the index layer, required for every write. */
+  title: string
   /** Which store it belongs to. */
   scope: MemoryScope
   /** What kind of record it is. */
@@ -130,8 +130,8 @@ export interface AddInput {
 export interface TargetedInput extends RecordTarget {
   /** The content that replaces it. */
   content: string
-  /** One-line title; derived from the content when omitted. */
-  title?: string | undefined
+  /** One-line title; the index layer, required for every write. */
+  title: string
   /** The citation to accumulate. Its quote is redacted before it is stored. */
   evidence?: EvidenceEntry | undefined
   /** Automatic writes state their reviewed confidence; explicit ones do not. */
@@ -190,6 +190,8 @@ export interface AddOperation {
   action: 'add'
   /** The fact to store. */
   content: string
+  /** One-line title, required by the review. */
+  title: string
   /** Which store it belongs to. */
   scope: MemoryScope
   /** What kind of record it is. */
@@ -209,6 +211,8 @@ export interface TargetedOperation {
   target_id: string
   /** The content that replaces it. */
   content: string
+  /** One-line title, required by the review. */
+  title: string
   /**
    * Which store the reviewed target lives in. Inherited from that record, never
    * taken from the model, so a proposal cannot move a fact between projects.

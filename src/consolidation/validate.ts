@@ -167,6 +167,10 @@ export function reviewOperation(operation: unknown, context: ReviewContext): Rev
   }
   if (/[\n\r\u2028\u2029]/u.test(content)) return { kind: 'rejected', reason: 'content is not a single line', code: 'content-not-single-line' }
 
+  const title = typeof proposal.title === 'string' ? proposal.title.trim() : ''
+  if (title === '') return { kind: 'rejected', reason: 'title is missing', code: 'title-missing' }
+  if (/[\n\r\u2028\u2029]/u.test(title)) return { kind: 'rejected', reason: 'title is not a single line', code: 'title-not-single-line' }
+
   const confidence = proposal.confidence
   if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
     return { kind: 'rejected', reason: 'confidence must be a number in [0, 1]', code: 'confidence-not-a-number' }
@@ -196,6 +200,7 @@ export function reviewOperation(operation: unknown, context: ReviewContext): Rev
   const shared = {
     scope: scope as MemoryScope,
     category: category as MemoryCategory,
+    title,
     content,
     confidence,
     projectId: scope === 'project' ? (target?.project_id ?? context.projectId) : undefined,

@@ -99,6 +99,8 @@ export interface ConsolidationRequest {
   entries: readonly unknown[]
   /** Active Memory the model may target. */
   existing: readonly unknown[]
+  /** An extra instruction appended to the call, used for a corrective retry. */
+  note?: string | undefined
   /** Cancellation from the maintenance task. */
   signal?: AbortSignal | undefined
 }
