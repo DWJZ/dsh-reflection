@@ -21,7 +21,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { zstdDecompressSync } from 'node:zlib'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const REPO = resolve(PLUGIN, '../..')
+// The harness checkout. CI points this at a fresh clone of the default branch so
+// a harness change that breaks the plugin fails the integration job first.
+const REPO = process.env.DSH_REPO ?? resolve(PLUGIN, '../..')
+const CLI = process.env.DSH_CLI ?? join(REPO, 'apps/cli/src/bin.ts')
 const { readRegistry } = await import(pathToFileURL(join(PLUGIN, 'src/registry.js')).href)
 const { readStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.js')).href)
 const { projectLayout, registryLayout } = await import(pathToFileURL(join(PLUGIN, 'src/paths.js')).href)
@@ -133,7 +136,7 @@ async function runSession(options) {
   const outcome = await new Promise((settle) => {
     const child = spawn(process.execPath, ['--import', 'tsx/esm', 
       '--import', 'tsx/esm',
-      join(REPO, 'apps/cli/src/bin.ts'),
+      CLI,
       '--profile', 'headless',
       '--patch', patch,
       ...options.sessionId === undefined ? [] : ['--session-id', options.sessionId],
