@@ -16,6 +16,7 @@ import { streamModelText } from '../consolidation/model.js'
 import type { ConsolidationUsage } from '../consolidation/model.js'
 import { collectScopes } from './collect.js'
 import { DIGEST_SYSTEM, expansionPrompt, parseCandidates, parseExpansion, synthesisPrompt } from './prompt.js'
+import type { DigestCandidate } from './prompt.js'
 import type { ExpandedRecord } from './prompt.js'
 import { renderPendingDocument, renderPendingMarkdown } from './pending.js'
 import type { PendingDigest } from './pending.js'
@@ -33,6 +34,7 @@ export type DigestResult =
     candidates: number
     rejected: number
     pendingPath: string
+    preview: DigestCandidate[]
   }
   | { status: 'error'; message: string }
 
@@ -128,6 +130,7 @@ export async function runDigest(
     candidates: checked.accepted.length,
     rejected: checked.rejected.length,
     pendingPath: layout.pendingPath,
+    preview: checked.accepted,
   }
 }
 

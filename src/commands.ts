@@ -111,11 +111,16 @@ async function digestCommand(deps: MemoryDeps, invocation: CommandInvocation, fl
     if (outcome.status === 'nothing-new') {
       return ok(`No project summary moved since ${outcome.since ?? 'the beginning'}; nothing to digest.`)
     }
-    return ok([
+    const lines = [
       `Digest window: ${outcome.since ?? 'all available'} .. ${outcome.to}`,
       `${String(outcome.candidates)} candidate(s), ${String(outcome.rejected)} rejected.`,
       `Review: ${outcome.pendingPath}`,
-    ].join('\n'))
+    ]
+    for (const [index, candidate] of outcome.preview.entries()) {
+      lines.push('', `${String(index + 1)}. ${candidate.title}`, `   ${candidate.content}`)
+      lines.push(`   sources: ${candidate.derived_from.map(source => `${source.project_id}/${source.record_id}`).join(' · ')}`)
+    }
+    return ok(lines.join('\n'))
   } catch (failure) {
     return error(`dsh-reflection: digest failed: ${failureMessage(failure)}`)
   }
