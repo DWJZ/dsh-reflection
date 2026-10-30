@@ -7,6 +7,7 @@ Memory* (real model, real tokens).
 | Layer | Command | Model calls | Runs on |
 |---|---|---|---|
 | L1 retrieval | `npm run eval:retrieval` | none | every push / pull request |
+| L1.5 digest pipeline | `npm run eval:pipeline` | none | every push / pull request |
 | L2 behavior | `npm run eval:behavior` | **real, paid** | release tag `v*`, or by hand |
 
 Neither layer replaces `npm test`: the contract suite asserts *specified
@@ -30,6 +31,23 @@ Metrics: Recall@3, Recall@8, MRR, nDCG, and the no-answer false-positive count
 fails when a metric drops more than 0.03 below `baseline.json`, or when a
 no-answer query starts returning hits.
 
+## L1.5 — digest pipeline
+
+Keyless and separate from the retrieval corpus: `eval/run-pipeline.mjs` builds two
+synthetic workspaces with records and summaries, runs the digest with a scripted
+model, applies the candidate, and asserts the whole chain:
+
+- the candidate needs two workspaces and `scope: practice`;
+- a single-workspace candidate is rejected (`fewer than two workspaces`);
+- a `scope: project` candidate is rejected (`project-specific`);
+- apply writes one user record with `derived_from`, archives only the sources
+  with a promotion comment, and moves pending to history;
+- the promoted record reaches the summary prompt and the injected envelope;
+- apply without pending fails.
+
+It needs no key, so it runs beside retrieval on every push. It does not call the
+CLI; the command path and real behavior stay in L2.
+
 ## L2 — behavior
 
 `data/scenarios.json` drives the shipped headless profile through the real CLI,
@@ -37,7 +55,7 @@ with the plugin mounted from this checkout and a real model. Each scenario gets
 a fresh `DSH_HOME` and its own project directories, so runs cannot leak into
 each other or into your real Memory.
 
-The ten scenarios:
+The twelve scenarios:
 
 | Scenario | What it proves |
 |---|---|
@@ -48,9 +66,11 @@ The ten scenarios:
 | `detail-lookup` | a fact outside the injected summary is still found |
 | `consolidation-write` | automatic learning stores the durable decision and drops the small talk |
 | `consolidation-secret` | automatic learning never stores a credential |
+| `consolidation-preference` | a durable preference is learned without touching the small talk |
 | `summary-fidelity` | the model-written summary names what matters, invents nothing, and fits its budget |
 | `update-write` | a later instruction updates the existing record instead of leaving the old one active |
 | `secret-screening` | an explicit write of a credential is refused |
+| `cross-workspace-experience` | a user-scope practice is visible and followed in a different project |
 
 `consolidation-write` drives `/memory consolidate` through the shipped driver fixture, because the plugin's own debounce cannot fire inside a one-shot run.
 

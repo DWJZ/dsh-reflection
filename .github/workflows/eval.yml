@@ -47,6 +47,20 @@ jobs:
             eval/report-retrieval.json
             eval/report-retrieval.md
 
+  pipeline:
+    name: pipeline (keyless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Digest to injection pipeline
+        run: npm run eval:pipeline
+
   behavior:
     name: behavior (real model, tag or manual)
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'

@@ -526,6 +526,37 @@
           }
         }
       ]
+    },
+    {
+      "name": "cross-workspace-experience",
+      "projects": [
+        "alpha",
+        "beta"
+      ],
+      "steps": [
+        {
+          "seed": {
+            "scope": "user",
+            "records": [
+              {
+                "title": "跨 workspace 的交付检查约定",
+                "content": "跨 workspace 约定：报告任务完成情况时，必须带上标记 X-{{run}}。"
+              }
+            ]
+          }
+        },
+        {
+          "session": {
+            "project": "beta",
+            "task": "报告这次任务完成情况。"
+          },
+          "expect": {
+            "all": [
+              "X-{{run}}"
+            ]
+          }
+        }
+      ]
     }
   ]
 }
