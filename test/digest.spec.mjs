@@ -155,6 +155,36 @@ console.log('a digest run writes pending and advances the checkpoint')
   check('force rescans every summary', forced.status === 'proposed' && seen.length === 4, JSON.stringify(forced))
 }
 
+console.log('an invalid JSON answer is retried and kept for diagnosis')
+{
+  const answers = [
+    JSON.stringify({ expand: [newRecord.id] }),
+    '{"candidates":[{"title":"broken"', // malformed, as a truncated or unescaped answer would be
+    JSON.stringify({ candidates: [
+      { title: 'Retried pattern.', content: 'A compact retried pattern.', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }] },
+    ] }),
+  ]
+  const fakeCtx = {
+    llm: {
+      async *stream() {
+        const text = answers[Math.min(seenCalls.length, answers.length - 1)]
+        seenCalls.push(text)
+        yield { type: 'text-delta', index: 0, text }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      },
+    },
+  }
+  const seenCalls = []
+  const agent = { session: { id: 'session-digest-retry', requestHeader: () => ({ config: { provider: 'p', model: 'm' } }) } }
+  const liveDeps = { ...deps, llmScope: () => fakeCtx }
+  const layout = digestLayout(MEMORY)
+  const outcome = await digest.runDigest(liveDeps, agent, { force: true })
+  check('the retry produces a candidate', outcome.status === 'proposed' && outcome.candidates === 1, JSON.stringify(outcome))
+  check('three calls were made', seenCalls.length === 3, String(seenCalls.length))
+  check('the malformed answer is kept', existsSync(join(layout.dir, 'last-answer.txt')))
+  check('the retry asked for compact JSON', seenCalls[2].length > 0)
+}
+
 console.log('the pending document renders')
 {
   const markdown = pending.renderPendingMarkdown({

@@ -8,6 +8,7 @@
  * @module dsh-reflection/digest
  */
 
+import { join } from 'node:path'
 import { digestLayout } from '../paths.js'
 import { writeAtomic } from '../jsonstore.js'
 import { streamModelText } from '../consolidation/model.js'
@@ -19,6 +20,7 @@ import { renderPendingDocument, renderPendingMarkdown } from './pending.js'
 import type { PendingDigest } from './pending.js'
 import { defaultSince, readDigestState, writeDigestState } from './state.js'
 import type { MemoryDeps } from '../types/deps.js'
+import { failureMessage } from '../errors.js'
 
 /** What one digest invocation produced. */
 export type DigestResult =
@@ -60,30 +62,47 @@ export async function runDigest(
   const scopes = collectScopes(deps, since)
   if (scopes.length === 0) return { status: 'nothing-new', since }
 
-  const allowedIds = new Set(scopes.flatMap(scope => scope.records.map(record => record.id)))
-  const phaseOne = await streamModelText(llm, {
+  const ask = (prompt: string) => streamModelText(llm, {
     session,
     sessionId,
     system: DIGEST_SYSTEM,
-    prompt: expansionPrompt(scopes, since, now),
+    prompt,
     label: 'digest',
   })
-  const expand = parseExpansion(phaseOne.text, allowedIds)
+  const usages: (ConsolidationUsage | undefined)[] = []
+  const allowedIds = new Set(scopes.flatMap(scope => scope.records.map(record => record.id)))
+  const phaseOnePrompt = expansionPrompt(scopes, since, now)
+  let phaseOne = await ask(phaseOnePrompt)
+  usages.push(phaseOne.usage)
+  let expand: string[]
+  try {
+    expand = parseExpansion(phaseOne.text, allowedIds)
+  } catch (failure) {
+    phaseOne = await ask(`${phaseOnePrompt}\n\nYour previous answer was not valid JSON: ${failureMessage(failure).slice(0, 120)}\nReturn only {"expand":[...]}.`)
+    usages.push(phaseOne.usage)
+    expand = parseExpansion(phaseOne.text, allowedIds)
+  }
   const expanded: ExpandedRecord[] = []
   for (const scope of scopes) {
     for (const record of scope.records) {
       if (expand.includes(record.id)) expanded.push({ projectId: scope.projectId, record })
     }
   }
-  const phaseTwo = await streamModelText(llm, {
-    session,
-    sessionId,
-    system: DIGEST_SYSTEM,
-    prompt: synthesisPrompt(scopes, expanded, since, now),
-    label: 'digest',
-  })
+  const synthesisBase = synthesisPrompt(scopes, expanded, since, now)
   const allowedSources = new Set(scopes.flatMap(scope => scope.records.map(record => `${scope.projectId}/${record.id}`)))
-  const checked = parseCandidates(phaseTwo.text, allowedSources)
+  let phaseTwo = await ask(synthesisBase)
+  usages.push(phaseTwo.usage)
+  let checked
+  try {
+    checked = parseCandidates(phaseTwo.text, allowedSources)
+  } catch (failure) {
+    // Keep the raw answer for diagnosis; a truncated or malformed plan is the
+    // common failure when the provider caps output, and the retry asks for less.
+    writeAtomic(join(layout.dir, 'last-answer.txt'), phaseTwo.text)
+    phaseTwo = await ask(`${synthesisBase}\n\nYour previous answer was not valid JSON: ${failureMessage(failure).slice(0, 120)}\nReturn one compact JSON object only, at most 6 candidates, each content under 200 characters, escaped quotes, no fences.`)
+    usages.push(phaseTwo.usage)
+    checked = parseCandidates(phaseTwo.text, allowedSources)
+  }
   const usage = sumUsage(phaseOne.usage, phaseTwo.usage)
   const pending: PendingDigest = {
     version: 1,

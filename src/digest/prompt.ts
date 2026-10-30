@@ -42,6 +42,9 @@ export const DIGEST_SYSTEM = [
   'Phase one: return only {"expand":["mem_..."]} with record ids from the index you want to read.',
   'Phase two: return only {"candidates":[{"title":"...","content":"...","derived_from":[{"project_id":"...","record_id":"mem_..."}]}]}.',
   'Return {"candidates":[]} when these updates teach nothing reusable.',
+  '',
+  'Keep the JSON compact: at most 6 candidates, each content under 200 characters, one JSON object,',
+  'no markdown fences. The caller rejects the whole turn when the answer is not valid JSON.',
 ].join('\n')
 
 /**
