@@ -196,13 +196,16 @@ export function buildSummaryPrompt(input: {
     `Keep the whole summary within ${String(input.budgetBytes)} UTF-8 bytes (about ${String(Math.floor(input.budgetBytes / 3))} Chinese characters); anything past that is cut before the agent sees it.`,
     '',
     'Newest records first:',
+    '[explicit] records are direct user instructions or preferences.',
+    '[agent] records are distilled experience from automatic summaries and the cross-project digest;',
+    'treat them as reference and let an explicit record win on conflict.',
   ]
   let bytes = Buffer.byteLength(lines.join('\n'), 'utf8')
   for (const record of active) {
     const text = record.content.length > RECORD_CHARS_IN_PROMPT
       ? `${record.content.slice(0, RECORD_CHARS_IN_PROMPT)}…`
       : record.content
-    const block = `\n- ${record.updated_at.slice(0, 10)} · ${record.title}\n${text}`
+    const block = `\n- [${record.source}] ${record.updated_at.slice(0, 10)} · ${record.title}\n${text}`
     const size = Buffer.byteLength(block, 'utf8')
     if (bytes + size > PROMPT_BUDGET_BYTES) break
     lines.push(block)

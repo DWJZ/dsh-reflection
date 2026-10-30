@@ -126,6 +126,20 @@ const titled = buildSummaryPrompt({
   budgetBytes: 1200,
 })
 check('the title appears before the body', titled.includes('构建命令') && titled.indexOf('构建命令') < titled.indexOf('pnpm run build:edge'))
+check('the record source is shown', titled.includes('[explicit]'))
+
+console.log('agent experience is labelled as reference')
+const mixed = buildSummaryPrompt({
+  records: [
+    record({ id: 'mem_agent', title: '汇总经验', content: '先解压再检索', source: 'agent' }),
+    record({ id: 'mem_user', title: '用户偏好', content: '用 pnpm', source: 'explicit' }),
+  ],
+  scopeLabel: 'user',
+  budgetBytes: 1200,
+})
+check('agent records carry their label', mixed.includes('[agent]'))
+check('the prompt says agent records are reference', mixed.includes('treat them as reference'))
+check('the prompt says explicit records win', mixed.includes('let an explicit record win on conflict'))
 
 console.log('staleness includes the budget')
 const fresh = { content: 'a summary', revision: 3, generated_at: AT, budget: 2400 }
