@@ -54,6 +54,10 @@ export interface MemoryRecord {
   updated_at: string
   evidence: EvidenceEntry[]
   superseded_by?: string | null
+  /** Why it was archived, when promotion or an operator removed it from service. */
+  comment?: string | undefined
+  /** Source records an agent-synthesized record was distilled from. */
+  derived_from?: { project_id: string; record_id: string }[] | undefined
 }
 
 /** One store file's contents. */
@@ -125,6 +129,10 @@ export interface AddInput {
   confidence?: number | undefined
   /** Who writes it; defaults to the explicit path. */
   source?: MemorySource | undefined
+  /** Source records this record was distilled from, for agent writes. */
+  derivedFrom?: { project_id: string; record_id: string }[] | undefined
+  /** Why it is being archived, when that applies. */
+  comment?: string | undefined
 }
 
 /** What `update` and `supersede` need: the record to act on, and the new content. */
@@ -139,6 +147,8 @@ export interface TargetedInput extends RecordTarget {
   confidence?: number | undefined
   /** Who writes it; defaults to the explicit path. */
   source?: MemorySource | undefined
+  /** Why it is being archived, when that applies. */
+  comment?: string | undefined
 }
 
 /**
@@ -163,6 +173,8 @@ export interface RecordTarget {
 export interface ArchiveInput extends RecordTarget {
   /** The citation to accumulate. Its quote is redacted before it is stored. */
   evidence?: EvidenceEntry | undefined
+  /** Why it is being archived; stored on the record for later audits. */
+  comment?: string | undefined
 }
 
 /** Any input one of the three actions takes. */

@@ -177,6 +177,31 @@ export function validateMemory(record: MemoryRecord, options: CheckOptions = {})
     throw new TypeError(`dsh-reflection: memory ${record.id}: content must be at most ${String(MAX_CONTENT_CHARS)} characters`)
   }
 
+  if (record.comment !== undefined) {
+    if (typeof record.comment !== 'string' || record.comment.trim() === '') {
+      throw new TypeError(`dsh-reflection: memory ${record.id}: comment must be a non-empty string`)
+    }
+    if (/[\n\r\u2028\u2029]/u.test(record.comment)) {
+      throw new TypeError(`dsh-reflection: memory ${record.id}: comment must be a single line`)
+    }
+  }
+  if (record.derived_from !== undefined) {
+    if (!Array.isArray(record.derived_from)) {
+      throw new TypeError(`dsh-reflection: memory ${record.id}: derived_from must be an array`)
+    }
+    for (const source of record.derived_from) {
+      if (typeof source !== 'object' || source === null || Array.isArray(source)) {
+        throw new TypeError(`dsh-reflection: memory ${record.id}: derived_from entries must be objects`)
+      }
+      if (!isProjectId(source.project_id)) {
+        throw new TypeError(`dsh-reflection: memory ${record.id}: derived_from project_id must be a project id`)
+      }
+      if (!isMemoryId(source.record_id)) {
+        throw new TypeError(`dsh-reflection: memory ${record.id}: derived_from record_id must be a Memory id`)
+      }
+    }
+  }
+
   if (typeof record.confidence !== 'number' || !Number.isFinite(record.confidence)
     || record.confidence < 0 || record.confidence > 1) {
     throw new TypeError(`dsh-reflection: memory ${record.id}: confidence must be a number in [0, 1], got ${JSON.stringify(record.confidence)}`)

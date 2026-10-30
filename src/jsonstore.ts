@@ -44,6 +44,8 @@ interface IndexRow {
   created_at: string
   updated_at: string
   superseded_by?: string | null
+  comment?: string
+  derived_from?: { project_id: string; record_id: string }[]
   /** Version 1 kept these in the index; version 2 reads them from the body. */
   content?: string
   evidence?: EvidenceEntry[]
@@ -144,6 +146,8 @@ function readRecords(storePath: string, document: StoreDocument): MemoryRecord[]
         updated_at: row.updated_at,
         evidence: Array.isArray(row.evidence) ? row.evidence : [],
         superseded_by: row.superseded_by ?? null,
+        ...row.comment === undefined ? {} : { comment: row.comment },
+        ...row.derived_from === undefined ? {} : { derived_from: row.derived_from },
       }
     }
     const bodyPath = join(recordsDir, `${row.id}.md`)
@@ -164,6 +168,8 @@ function readRecords(storePath: string, document: StoreDocument): MemoryRecord[]
       updated_at: row.updated_at,
       evidence,
       superseded_by: row.superseded_by ?? null,
+      ...row.comment === undefined ? {} : { comment: row.comment },
+      ...row.derived_from === undefined ? {} : { derived_from: row.derived_from },
     }
   })
 }
@@ -487,6 +493,8 @@ function indexRowOf(record: MemoryRecord) {
     created_at: record.created_at,
     updated_at: record.updated_at,
     superseded_by: record.superseded_by ?? null,
+    ...record.comment === undefined ? {} : { comment: record.comment },
+    ...record.derived_from === undefined ? {} : { derived_from: record.derived_from },
   }
 }
 

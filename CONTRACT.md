@@ -721,6 +721,8 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 
 /memory digest [--force]
 
+/memory digest --apply [1,3,...]
+
 /memory enable
 /memory disable
 
@@ -740,7 +742,8 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 - **两阶段**：第一次给 summary + 记录索引（id + title），模型返回要展开的 id；第二次给这些记录的正文。展开条数不设上限。
 - **输出**：只写 `digest/pending.json` 与 `pending.md`，**不写 Memory**；pending 成功写出后才推进 `lastScanAt`。
 - **候选校验**：title / content 非空、单行、content ≤500 字符、过 secret 筛查、`derived_from` 必须指向本次提供的记录。
-- **后续 apply（尚未实现）**：审核后写 user scope（`source: 'agent'`），并归档被消费的 project active 记录。
+- **apply**：`/memory digest --apply [1,3,...]`。每条候选写一条 user scope 记录（`source: 'agent'`，带 `derived_from`）；只归档候选**引用到的** project 记录，归档记录带 `comment` 说明"已提升到 user scope"。全部应用后 pending 移到 `digest/history/`，未应用的部分留在 pending。
+- 已有 pending 时再次 digest 会拒绝，避免覆盖未审的候选；`--force` 重新扫描并替换 pending。
 
 ---
 

@@ -8,6 +8,7 @@
  * @module dsh-reflection/digest
  */
 
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { digestLayout } from '../paths.js'
 import { writeAtomic } from '../jsonstore.js'
@@ -61,6 +62,9 @@ export async function runDigest(
   const since = options.force === true ? undefined : state.lastScanAt ?? defaultSince(nowMs)
   const scopes = collectScopes(deps, since)
   if (scopes.length === 0) return { status: 'nothing-new', since }
+  if (options.force !== true && existsSync(layout.pendingPath)) {
+    return { status: 'error', message: 'a pending digest already exists; review and apply it, or rerun with --force to replace it' }
+  }
 
   const ask = (prompt: string) => streamModelText(llm, {
     session,

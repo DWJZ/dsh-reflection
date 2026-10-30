@@ -96,6 +96,7 @@ envelope 的固定部分 —— 计数、文件路径、指向单条文件的说
 /memory export [--user|--project] [--format md|json]
 /memory consolidate [--dry-run]
 /memory digest [--force]
+/memory digest --apply [1,3,...]
 /memory enable | /memory disable
 /memory project bind <path> | relink <old> <new> | show
 ```

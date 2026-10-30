@@ -16,6 +16,7 @@ const state = await import(pathToFileURL(join(PLUGIN, 'src/digest/state.js')).hr
 const collect = await import(pathToFileURL(join(PLUGIN, 'src/digest/collect.js')).href)
 const prompt = await import(pathToFileURL(join(PLUGIN, 'src/digest/prompt.js')).href)
 const pending = await import(pathToFileURL(join(PLUGIN, 'src/digest/pending.js')).href)
+const digestApply = await import(pathToFileURL(join(PLUGIN, 'src/digest/apply.js')).href)
 const { withStore, readStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.js')).href)
 const { writeSummaryDocument } = await import(pathToFileURL(join(PLUGIN, 'src/summary.js')).href)
 const { digestLayout, projectLayout, registryLayout, tombstoneLayout, userLayout } = await import(pathToFileURL(join(PLUGIN, 'src/paths.js')).href)
@@ -69,7 +70,7 @@ const oldRecord = await seedProject(PROJECT_OLD, OLD, 'old workspace fact')
 const newRecord = await seedProject(PROJECT_NEW, FRESH, 'new workspace fact')
 
 const deps = {
-  config: { memoryDir: MEMORY },
+  config: { memoryDir: MEMORY, lockTimeoutMs: 2000, staleLockMs: 60000, maxEvidencePerMemory: 8 },
   scopes: { user: userLayout(MEMORY), project: id => projectLayout(MEMORY, id) },
   registry: REG,
   tombstones: tombstoneLayout(MEMORY),
@@ -155,13 +156,32 @@ console.log('a digest run writes pending and advances the checkpoint')
   check('force rescans every summary', forced.status === 'proposed' && seen.length === 4, JSON.stringify(forced))
 }
 
+console.log('apply promotes the candidate and archives only its sources')
+{
+  const agent = { session: { id: 'session-digest-apply', requestHeader: () => ({ config: { provider: 'p', model: 'm' } }) } }
+  const applied = await digestApply.applyDigest(deps, agent)
+  check('one candidate is applied', applied.status === 'applied' && applied.applied === 1, JSON.stringify(applied))
+  check('one source is archived', applied.archived === 1)
+  const userStore = readStore(userLayout(MEMORY).storePath)
+  const promoted = userStore.records.find(record => record.title === 'Generate before running e2e.')
+  check('the user record exists', promoted !== undefined)
+  check('the user record is agent-sourced', promoted?.source === 'agent')
+  check('the user record names its source', promoted?.derived_from?.[0]?.record_id === newRecord.id)
+  const projectStore = readStore(projectLayout(MEMORY, PROJECT_NEW).storePath)
+  const archived = projectStore.records.find(record => record.id === newRecord.id)
+  check('the source record is archived', archived?.status === 'archived')
+  check('the archive comment names the promotion', String(archived?.comment).includes('Promoted to user-scope experience'))
+  check('the pending file moved to history', existsSync(join(digestLayout(MEMORY).dir, 'history')))
+  check('no pending file remains', existsSync(digestLayout(MEMORY).pendingPath) === false)
+}
+
 console.log('an invalid JSON answer is retried and kept for diagnosis')
 {
   const answers = [
-    JSON.stringify({ expand: [newRecord.id] }),
+    JSON.stringify({ expand: [oldRecord.id] }),
     '{"candidates":[{"title":"broken"', // malformed, as a truncated or unescaped answer would be
     JSON.stringify({ candidates: [
-      { title: 'Retried pattern.', content: 'A compact retried pattern.', derived_from: [{ project_id: PROJECT_NEW, record_id: newRecord.id }] },
+      { title: 'Retried pattern.', content: 'A compact retried pattern.', derived_from: [{ project_id: PROJECT_OLD, record_id: oldRecord.id }] },
     ] }),
   ]
   const fakeCtx = {

@@ -20,6 +20,7 @@ import { archiveMemory, clearScope, forgetMemory } from './actions.js'
 import { STATUSES } from './schema.js'
 import { describeOutcome as describeConsolidation } from './consolidation/index.js'
 import { runDigest } from './digest/index.js'
+import { applyDigest } from './digest/apply.js'
 import { isAbsolute, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, MemoryDeps } from './types/deps.js'
@@ -45,7 +46,7 @@ export function registerMemoryCommands(ctx: Context, deps: MemoryDeps) {
     input: {
       hint: 'help · list [--user|--project] [--status …] · search <query> [--top n] · '
         + 'inspect|archive|forget <id> · clear --user|--project --yes · export [--format md|json] · '
-        + 'consolidate [--dry-run] · digest [--force] · enable|disable · project bind|relink|show',
+        + 'consolidate [--dry-run] · digest [--force] [--apply [n,...]] · enable|disable · project bind|relink|show',
     },
     handler: (invocation: CommandInvocation) => run(deps, invocation),
   })
@@ -94,6 +95,17 @@ async function run(deps: MemoryDeps, invocation: CommandInvocation) {
 async function digestCommand(deps: MemoryDeps, invocation: CommandInvocation, flags: Map<string, string>) {
   if (deps.isEnabled() === false) return error('dsh-reflection is disabled; run /memory enable first')
   try {
+    if (flags.has('apply')) {
+      const requested = flags.get('apply')
+      const selection = requested === undefined || String(requested) === 'true' || String(requested) === '' ? undefined : String(requested)
+      const applied = await applyDigest(deps, invocation.agent, selection)
+      if (applied.status === 'error') return error(`dsh-reflection: ${applied.message ?? 'apply failed'}`)
+      const where = applied.historyPath ?? applied.pendingPath ?? ''
+      return ok([
+        `Applied ${String(applied.applied)} candidate(s); archived ${String(applied.archived)} source record(s); ${String(applied.skipped)} already out of service.`,
+        applied.remaining === 0 ? `Pending is empty; the applied batch went to ${where}` : `${String(applied.remaining)} candidate(s) still pending at ${where}`,
+      ].join('\n'))
+    }
     const outcome = await runDigest(deps, invocation.agent, { force: flags.has('force') === true })
     if (outcome.status === 'error') return error(`dsh-reflection: ${outcome.message}`)
     if (outcome.status === 'nothing-new') {
@@ -382,6 +394,7 @@ function usageText(deps: MemoryDeps) {
     '/memory export [--user|--project] [--format md|json]',
     '/memory consolidate [--dry-run [--show-raw]]',
     '/memory digest [--force]',
+    '/memory digest --apply [1,3,...]',
     '/memory enable | /memory disable',
     '/memory project bind <path> | relink <old> <new> | show',
   ].join('\n')
@@ -471,7 +484,7 @@ function resolvePath(cwd: string | null | undefined, path: string): string {
 }
 
 /** Flags that consume the following token as their value. */
-const VALUE_FLAGS = new Set(['status', 'top', 'format'])
+const VALUE_FLAGS = new Set(['status', 'top', 'format', 'apply'])
 
 /**
  * Split one raw command input into tokens, honouring quoting.

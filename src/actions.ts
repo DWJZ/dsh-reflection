@@ -102,6 +102,8 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
       updated_at: at,
       status: 'active',
       superseded_by: null,
+      ...input.derivedFrom === undefined ? {} : { derived_from: input.derivedFrom },
+      ...input.comment === undefined ? {} : { comment: input.comment },
     }
     validateMemory(record, { maxEvidencePerMemory: options.maxEvidencePerMemory })
     return { changed: true, records: [...store.records, record], result: { action: 'added', id: record.id } }
@@ -208,7 +210,11 @@ export async function archiveMemory(options: ActionOptions, input: ArchiveInput)
   const located = locateVisible(options, input.id, input.projectId)
   return apply(options, located.layout, (store: MemoryStore) => {
     const current = requireActive(store, input.id)
-    const record = { ...current, status: 'archived' }
+    const record = {
+      ...current,
+      status: 'archived',
+      ...input.comment === undefined ? {} : { comment: input.comment },
+    }
     // Archiving adds no evidence, so the current cap does not apply to it.
     validateMemory(record)
     return {
