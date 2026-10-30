@@ -17,6 +17,8 @@ import { digestLayout } from '../paths.js'
 import { renderPendingDocument, renderPendingMarkdown } from './pending.js'
 import type { PendingDigest } from './pending.js'
 import type { MemoryDeps } from '../types/deps.js'
+import { appendPluginRecord } from '@deepseek-ai/dsh-session'
+import { DIGEST_EVENT_TYPE } from './types.js'
 
 /** What one apply produced. */
 export interface ApplyResult {
@@ -63,6 +65,8 @@ export async function applyDigest(
   let applied = 0
   let archived = 0
   let skipped = 0
+  const appliedRecords: { index: number; title: string; record_id: string }[] = []
+  const archivedIds: string[] = []
   const remaining: PendingDigest['candidates'] = []
   for (const [index, candidate] of pending.candidates.entries()) {
     if (!chosen.has(index + 1)) {
@@ -82,6 +86,7 @@ export async function applyDigest(
       if (typeof outcome.id !== 'string') throw new Error(`no record id for candidate ${String(index + 1)}`)
       recordId = outcome.id
       applied += 1
+      appliedRecords.push({ index: index + 1, title: candidate.title, record_id: recordId })
     } catch (failure) {
       deps.logger.warn(`dsh-reflection: digest candidate ${String(index + 1)} was not applied: ${failureMessage(failure)}`)
       remaining.push(candidate)
@@ -95,6 +100,7 @@ export async function applyDigest(
           comment: `Promoted to user-scope experience ${recordId}: ${candidate.title}`,
         })
         archived += 1
+        archivedIds.push(source.record_id)
       } catch {
         // A source that is already archived or superseded is already out of
         // service; it is not a reason to fail the candidate.
@@ -120,6 +126,21 @@ export async function applyDigest(
     await deps.refreshSummary?.(agent)
   } catch (failure) {
     deps.logger.warn(`dsh-reflection: summaries were not refreshed after apply: ${failureMessage(failure)}`)
+  }
+  const session = agent?.session
+  if (session !== undefined) {
+    try {
+      appendPluginRecord(session, DIGEST_EVENT_TYPE, {
+        kind: 'apply',
+        at: new Date((deps.now ?? Date.now)()).toISOString(),
+        applied: appliedRecords,
+        archived: archivedIds,
+        skipped,
+        remaining: remaining.length,
+      })
+    } catch (failure) {
+      deps.logger.warn(`dsh-reflection: could not record the digest apply audit: ${failureMessage(failure)}`)
+    }
   }
   return {
     status: 'applied',

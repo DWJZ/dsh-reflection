@@ -16,6 +16,7 @@
 
 import type { ProjectEntry, ProjectMatch } from './identity.js'
 import type { RunAudit } from '../consolidation/index.js'
+import type { DigestAudit } from '../digest/types.js'
 import type { PluginRecordMap, PluginRecordType } from '@deepseek-ai/dsh-session/types'
 
 /** Payload of one project attribution record: how a Session was matched to a project. */
@@ -32,6 +33,7 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface PluginRecordMap {
     'plugin:dsh-reflection/project': ProjectRecord
     'plugin:dsh-reflection/consolidation': RunAudit
+    'plugin:dsh-reflection/digest': DigestAudit
   }
 }
 

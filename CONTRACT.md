@@ -745,6 +745,7 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 - **apply**：`/memory digest --apply [1,3,...]`。每条候选写一条 user scope 记录（`source: 'agent'`，带 `derived_from`）；只归档候选**引用到的** project 记录，归档记录带 `comment` 说明"已提升到 user scope"。全部应用后 pending 移到 `digest/history/`，未应用的部分留在 pending。
 - 已有 pending 时再次 digest 会拒绝，避免覆盖未审的候选；`--force` 重新扫描并替换 pending。
 - **apply 只消费 pending 里的候选**（按编号选择），不接受任意记录 id；候选之外的记录不会被 apply 写入或归档。
+- **审计**：run 与 apply 各往 Session 追加一条 `plugin:dsh-reflection/digest` 记录，含窗口、项目 summary revision、展开/归档的记录 id、候选/拒绝计数、模型与 usage，**不含正文**。
 
 ---
 

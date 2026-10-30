@@ -23,6 +23,8 @@ import type { PendingDigest } from './pending.js'
 import { defaultSince, readDigestState, writeDigestState } from './state.js'
 import type { MemoryDeps } from '../types/deps.js'
 import { failureMessage } from '../errors.js'
+import { appendPluginRecord } from '@deepseek-ai/dsh-session'
+import { DIGEST_EVENT_TYPE } from './types.js'
 
 /** What one digest invocation produced. */
 export type DigestResult =
@@ -122,6 +124,26 @@ export async function runDigest(
   writeAtomic(layout.pendingPath, renderPendingDocument(pending))
   writeAtomic(layout.pendingMarkdownPath, renderPendingMarkdown(pending))
   writeDigestState(layout.statePath, { lastScanAt: now })
+  try {
+    appendPluginRecord(session, DIGEST_EVENT_TYPE, {
+      kind: 'run',
+      at: now,
+      scan_from: since ?? null,
+      scan_to: now,
+      projects: scopes.map(scope => ({
+        project_id: scope.projectId,
+        summary_revision: scope.summary.revision,
+        summary_generated_at: scope.summary.generated_at,
+      })),
+      expanded: expanded.map(item => item.record.id),
+      candidates: checked.accepted.length,
+      rejected: checked.rejected.length,
+      model: `${phaseTwo.provider}/${phaseTwo.model}`,
+      ...usage === undefined ? {} : { usage },
+    })
+  } catch (failure) {
+    deps.logger.warn(`dsh-reflection: could not record the digest audit: ${failureMessage(failure)}`)
+  }
   deps.logger.info?.(`dsh-reflection: digest proposed ${String(checked.accepted.length)} candidate(s) in ${layout.pendingPath}`)
   return {
     status: 'proposed',
