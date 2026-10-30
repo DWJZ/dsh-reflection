@@ -1,8 +1,8 @@
 name: eval
 
-# L1 (retrieval) is keyless and deterministic: it runs on every push and pull
-# request. L2 (behavior) makes real model calls, so it runs only on a release
-# tag or by hand. The repository is public: `pull_request` never receives
+# Everything keyless (typecheck, unit, pipeline, retrieval) runs on every push
+# and pull request. L2 (behavior) makes real model calls, so it runs only on a
+# release tag or by hand. The repository is public: `pull_request` never receives
 # repository secrets, and the behavior job is deliberately not attached to it.
 
 on:
@@ -60,6 +60,24 @@ jobs:
       - run: npm ci
       - name: Digest to injection pipeline
         run: npm run eval:pipeline
+
+  test:
+    name: test (keyless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit and client smoke
+        run: npm test
+      - name: Build
+        run: npm run build
 
   behavior:
     name: behavior (real model, tag or manual)
