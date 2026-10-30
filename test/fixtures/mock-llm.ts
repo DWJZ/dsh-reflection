@@ -15,15 +15,27 @@
  */
 
 import { appendFileSync, statSync } from 'node:fs'
-// Imported by path because a plugin under `plugins/` has no workspace link to the
-// harness packages, and this adapter exists only for the test harness.
-import {
-  LlmAdapter,
-  type GenerateOptions,
-  type LlmResolvedModelInfo,
-  type StreamChunk,
-  type ToolCallId,
-} from '../../../../packages/llm/llm/src/index.ts'
+import { dirname, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+// A plugin under `plugins/` has no workspace link to the harness packages, so
+// resolve the harness checkout at runtime. `DSH_REPO` is the CI path; the
+// relative fallback is the local `<harness>/plugins/dsh-reflection` layout.
+const HARNESS = process.env.DSH_REPO ?? join(dirname(fileURLToPath(import.meta.url)), '../../../..')
+const LLM_ENTRY = join(HARNESS, 'packages/llm/llm/src/index.ts')
+const { LlmAdapter } = await import(pathToFileURL(LLM_ENTRY).href) as { LlmAdapter: new () => object }
+
+/** Minimal local types for the adapter; the harness checks the runtime shape. */
+interface GenerateOptions {
+  provider?: string | undefined
+  model?: string | undefined
+  system?: string | undefined
+  tools?: { name: string }[] | undefined
+  messages?: unknown[] | undefined
+}
+type StreamChunk = Record<string, unknown>
+type LlmResolvedModelInfo = Record<string, unknown>
+type ToolCallId = string
 
 /** The route this adapter owns. */
 const PROVIDER = 'dsh-reflection-mock'
@@ -130,7 +142,7 @@ class MemoryMockAdapter extends LlmAdapter {
    * @param model - exact model id.
    * @returns the route identity plus the capacity it declares.
    */
-  override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+  async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     return { provider, id: model, name: model, context: { contextWindow: WINDOW_TOKENS } }
   }
 
