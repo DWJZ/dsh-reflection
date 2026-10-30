@@ -16,6 +16,7 @@
 
 import type { ConsolidationRequest } from './model.js'
 import { MEMORY_TITLE_RULE } from '../title.js'
+import { MAX_CONTENT_CHARS } from '../schema.js'
 import type { TrajectoryEntry } from '../types/trajectory.js'
 
 /** The instruction that frames one consolidation call. */
@@ -58,6 +59,10 @@ export const CONSOLIDATION_SYSTEM_PROMPT = [
   'Every add, update and supersede must include a one-line title:',
   MEMORY_TITLE_RULE,
   'A plan with an operation missing its title is invalid and will be sent back.',
+  '',
+  `Every add, update and supersede must keep content to one line of at most ${String(MAX_CONTENT_CHARS)} characters:`,
+  '- a longer fact must be split into separate operations;',
+  '- a plan with over-long content is sent back once, and a still-over-long plan is rejected.',
 ].join('\n')
 
 /**

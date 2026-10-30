@@ -36,6 +36,7 @@ import { failureMessage } from '../errors.js'
 import type { ConsolidationRequest } from './model.js'
 import type { ObservedEvent } from '../types/trajectory.js'
 import { MAX_BACKFILL_EVENTS } from '../history.js'
+import { MAX_CONTENT_CHARS, charLength } from '../schema.js'
 import type { HistoryReader } from '../history.js'
 import { createCollector } from './collector.js'
 import { appendPluginRecord } from '@deepseek-ai/dsh-session'
@@ -81,7 +82,14 @@ export interface DryRunAudit {
   /** The operations the review accepted, as the model proposed them. */
   accepted: readonly AcceptedProposal[]
   /** The proposals the review refused, with their position in the plan. */
-  rejected: readonly { index?: number | undefined; reason?: string | undefined }[]
+  rejected: readonly {
+    index?: number | undefined
+    reason?: string | undefined
+    code?: string | undefined
+    action?: string | undefined
+    scope?: string | undefined
+    content_length?: number | undefined
+  }[]
   /** Why accepted proposals became no-ops. */
   noopReasons: readonly string[]
   /** The model's own answer, kept only for a dry run that asked for it. */
@@ -134,6 +142,8 @@ export interface SettledAudit {
   committed?: { add: number; update: number; supersede: number } | undefined
   /** Why proposals were refused, by code. */
   rejected_reasons?: Record<string, number> | undefined
+  /** Per-rejection metadata: action, scope, code and proposed content length. */
+  rejected_details?: { action?: string | undefined; scope?: string | undefined; code: string; content_length?: number | undefined }[] | undefined
   /** What asked for the run. */
   trigger?: string | undefined
   /** What the model call cost, when the provider reported it. */
@@ -502,17 +512,22 @@ export function createConsolidation(options: ConsolidationOptions) {
       let plan = parsePlan(answer.text)
       let usage = answer.usage
       let modelRaw = answer.text
-      if (planNeedsTitle(plan)) {
-        // The plan is sent back once with the missing-title complaint, so a valid
-        // plan is not rejected for a fixable omission. A retry that fails keeps
-        // the first plan; the review then rejects the untitled operations.
+      const retryNotes = [
+        planNeedsTitle(plan) ? TITLE_RETRY_NOTE : '',
+        planNeedsShortening(plan) ? CONTENT_RETRY_NOTE : '',
+      ].filter(note => note !== '').join('\n')
+      if (retryNotes !== '') {
+        // The plan is sent back once with the fixable complaint (missing title,
+        // over-long content), so a valid plan is not rejected for an omission a
+        // second pass can repair. A failed retry keeps the first plan; the review
+        // then rejects the operations it cannot accept.
         try {
-          const retried = await callModel({ ...request, note: TITLE_RETRY_NOTE })
+          const retried = await callModel({ ...request, note: retryNotes })
           plan = parsePlan(retried.text)
           modelRaw = retried.text
           usage = sumUsage(usage, retried.usage)
         } catch (failure) {
-          logger?.warn(`dsh-reflection: the consolidation title retry failed: ${failureMessage(failure)}`)
+          logger?.warn(`dsh-reflection: the consolidation retry failed: ${failureMessage(failure)}`)
         }
       }
       // The usage belongs to the call, not the window, so it rides along with the
@@ -760,8 +775,27 @@ function mergeEvents(backfilled: readonly ObservedEvent[], observed: readonly Ob
 /** The instruction that sends a title-less plan back to the model once. */
 const TITLE_RETRY_NOTE = 'Your previous plan omitted a title for one or more operations. Every add, update and supersede needs a one-line title. Return the full plan again, with a title on each operation.'
 
+/** The instruction that sends an over-long plan back to the model once. */
+const CONTENT_RETRY_NOTE = `Your previous plan had content longer than ${String(MAX_CONTENT_CHARS)} characters. Every content must be a single line of at most ${String(MAX_CONTENT_CHARS)} characters; split a longer fact into separate operations. Return the full plan again.`
+
 /**
  * Whether a plan has an operation that must carry a title but does not.
+ * @param plan - the parsed plan.
+ * @returns true when a corrective retry is needed.
+ */
+function planNeedsShortening(plan: { operations?: unknown[] }): boolean {
+  if (!Array.isArray(plan.operations)) return false
+  return plan.operations.some((operation) => {
+    if (typeof operation !== 'object' || operation === null) return false
+    const action = (operation as { action?: unknown }).action
+    if (action !== 'add' && action !== 'update' && action !== 'supersede') return false
+    const content = (operation as { content?: unknown }).content
+    return typeof content === 'string' && charLength(content.trim()) > MAX_CONTENT_CHARS
+  })
+}
+
+/**
+ * Whether a plan has an operation whose content is over the hard limit.
  * @param plan - the parsed plan.
  * @returns true when a corrective retry is needed.
  */
@@ -795,15 +829,30 @@ function sumUsage(left: ConsolidationUsage | undefined, right: ConsolidationUsag
 }
 
 function countRejections(
-  rejected: readonly { code?: unknown }[],
-): { rejected_reasons?: Record<string, number> } {
+  rejected: readonly {
+    code?: unknown
+    action?: unknown
+    scope?: unknown
+    content_length?: unknown
+  }[],
+): {
+  rejected_reasons?: Record<string, number>
+  rejected_details?: { action?: string | undefined; scope?: string | undefined; code: string; content_length?: number | undefined }[]
+} {
   if (rejected.length === 0) return {}
   const counts: Record<string, number> = {}
+  const details = []
   for (const entry of rejected) {
     const code = typeof entry.code === 'string' ? entry.code : 'other'
     counts[code] = (counts[code] ?? 0) + 1
+    details.push({
+      code,
+      ...typeof entry.action === 'string' ? { action: entry.action } : {},
+      ...typeof entry.scope === 'string' ? { scope: entry.scope } : {},
+      ...typeof entry.content_length === 'number' ? { content_length: entry.content_length } : {},
+    })
   }
-  return { rejected_reasons: counts }
+  return { rejected_reasons: counts, rejected_details: details }
 }
 
 /**

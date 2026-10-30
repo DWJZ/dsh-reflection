@@ -619,6 +619,7 @@ What 必须；When/Where、How、Why 有则写；Who 默认是用户/本项目�
 
 - `memory_remember`：模型不填 title 就是无效调用，由工具校验打回。
 - consolidation：计划里任一 add/update/supersede 缺 title 时，先把整份计划连同"缺少 title"的提示重问一次；仍缺则拒绝该操作，audit 记 `title-missing`，不落库。
+- consolidation：任一 operation 的 content 超过 500 字符时，同样把整份计划连同"超长"提示重问一次；仍超长则拒绝，audit 记 `content-too-long`。settled audit 的 `rejected_details` 保留每条拒绝的 `code` / `action` / `scope` / `content_length`，不存正文。
 - 旧记录：POC 阶段用一次性脚本按同一规则重新生成过 title（不属于插件命令，不随仓库发布）；没有兼容分支。
 - title 不属于正文，截断只作用于 `content`。
 

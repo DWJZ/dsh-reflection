@@ -807,5 +807,38 @@ console.log('a plan that still has no title is rejected')
   check('the missing title is the reason', outcome.rejected_reasons?.['title-missing'] === 1, JSON.stringify(outcome.rejected_reasons))
 }
 
+console.log('a plan with over-long content is sent back once')
+{
+  const long = JSON.stringify({ operations: [{ action: 'add', scope: 'project', title: 'A long fact.', content: 'x'.repeat(501), confidence: 0.94, evidence_event_seqs: [1] }] })
+  const short = JSON.stringify({ operations: [{ action: 'add', scope: 'project', title: 'A long fact.', content: 'x'.repeat(100), confidence: 0.94, evidence_event_seqs: [1] }] })
+  const harnessed = harness({
+    sessionId: 'session_content_retry',
+    modelAnswer: request => request.note === undefined ? long : short,
+  })
+  observe(harnessed, [human(1, '这个项目有个长事实')])
+  const outcome = await harnessed.consolidation.consolidate(harnessed.agent)
+  check('the model was asked twice', harnessed.calls.length === 2, String(harnessed.calls.length))
+  check('the retry names the length limit', String(harnessed.calls[1]?.note ?? '').includes('500'))
+  check('the short plan is committed', outcome.operations.add === 1, JSON.stringify(outcome.operations))
+  check('the stored content fits',
+    readStore(projectLayout(MEMORY, PROJECT).storePath).records.some(record => record.status === 'active' && record.title === 'A long fact.' && record.content === 'x'.repeat(100)))
+}
+
+console.log('a still-over-long plan is rejected with metadata')
+{
+  const long = JSON.stringify({ operations: [{ action: 'add', scope: 'project', title: 'Still too long.', content: 'y'.repeat(501), confidence: 0.94, evidence_event_seqs: [1] }] })
+  const harnessed = harness({ sessionId: 'session_content_rejected', modelAnswer: long })
+  observe(harnessed, [human(1, '这个项目有个超长事实')])
+  const outcome = await harnessed.consolidation.consolidate(harnessed.agent)
+  check('the retry still happened', harnessed.calls.length === 2, String(harnessed.calls.length))
+  check('the operation was rejected', outcome.operations.add === 0 && outcome.rejected === 1, JSON.stringify(outcome))
+  check('the length is the reason', outcome.rejected_reasons?.['content-too-long'] === 1, JSON.stringify(outcome.rejected_reasons))
+  check('the metadata keeps the action and length',
+    outcome.rejected_details?.[0]?.code === 'content-too-long'
+      && outcome.rejected_details[0].action === 'add'
+      && outcome.rejected_details[0].content_length === 501,
+    JSON.stringify(outcome.rejected_details))
+}
+
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)
 process.exit(failures === 0 ? 0 : 1)

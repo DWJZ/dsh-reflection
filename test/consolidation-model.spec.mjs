@@ -43,6 +43,7 @@ check('it defines the scopes', prompt.includes('"user" scope for preferences') &
 check('it grounds evidence in the trajectory', prompt.includes('seq numbers that appear in the trajectory'))
 check('it states the answer shape', prompt.includes('{"operations":'))
 check('it asks for reusable patterns', prompt.includes('reusable pattern'))
+check('it states the content limit', prompt.includes('at most 500 characters'))
 
 console.log('the request renders the trajectory as data')
 const request = policy.buildRequest({

@@ -129,7 +129,18 @@ export function reviewPlan(plan: { operations?: unknown[] } | null | undefined, 
       continue
     }
     if (review.kind === 'rejected') {
-      rejected.push({ index, code: review.code ?? 'other', reason: review.reason })
+      const proposal = asRecord(operation)
+      const action = proposal !== undefined && typeof proposal.action === 'string' ? proposal.action : undefined
+      const scope = proposal !== undefined && typeof proposal.scope === 'string' ? proposal.scope : undefined
+      const content = proposal !== undefined && typeof proposal.content === 'string' ? proposal.content.trim() : undefined
+      rejected.push({
+        index,
+        code: review.code ?? 'other',
+        reason: review.reason,
+        ...action === undefined ? {} : { action },
+        ...scope === undefined ? {} : { scope },
+        ...content === undefined ? {} : { content_length: charLength(content) },
+      })
       continue
     }
     accepted.push(review.operation)
