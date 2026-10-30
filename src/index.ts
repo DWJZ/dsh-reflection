@@ -148,6 +148,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
     // cached project, or the next command would still see the old one.
     resolveProjectFor: (agent: MemoryAgent) => resolveForAgent(agent),
     consolidationEnabled: () => settings.consolidation.enabled,
+    llmScope: () => llmScope ?? undefined,
     refreshSummary: (agent: MemoryAgent) => summaryService.refresh(agent),
     consolidate: (
       agent: MemoryAgent,

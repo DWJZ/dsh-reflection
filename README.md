@@ -118,11 +118,14 @@ its own initiative, before work that may have been done before.
 /memory clear --user|--project --yes
 /memory export [--user|--project] [--format md|json]
 /memory consolidate [--dry-run]
+/memory digest [--force]
 /memory enable | /memory disable
 /memory project bind <path> | relink <old> <new> | show
 ```
 
 `forget` deletes outright and leaves only a tombstone that carries no content. `archive` keeps the record and takes it out of the index. `list` may truncate and says how many rows remain; `export` never truncates — it fails with guidance instead.
+
+`/memory digest` is manual and cross-project: it reads the project summaries generated since the checkpoint (default: the last 24 hours; `--force` reads all), lets the model expand a few records, and writes `digest/pending.json` + `pending.md`. It never writes Memory; the candidates wait for review.
 
 A path with a space is one argument: quote it (`bind "/Users/me/My Project"`, `relink '/Old Project' '/New Project'`) or escape the space. A quote that is never closed is refused with `Invalid command arguments: unterminated quote.` rather than guessed at, because guessing the argument boundary is how a bind lands on the wrong directory.
 

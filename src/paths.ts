@@ -65,6 +65,21 @@ export function scopeLayout(scopeDir: string): ScopeLayout {
 }
 
 /**
+ * Resolve the digest checkpoint and pending files.
+ * @param memoryDir - the Memory root.
+ * @returns the digest directory and its three files.
+ */
+export function digestLayout(memoryDir: string) {
+  const dir = join(resolve(expandHome(memoryDir)), 'digest')
+  return {
+    dir,
+    statePath: join(dir, 'state.json'),
+    pendingPath: join(dir, 'pending.json'),
+    pendingMarkdownPath: join(dir, 'pending.md'),
+  }
+}
+
+/**
  * Resolve the registry file and its lock.
  * @param memoryDir - the Memory root.
  * @returns the registry path and its lock path.

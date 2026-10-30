@@ -9,6 +9,7 @@
  */
 
 import type { MemorySettings } from './config.js'
+import type { Context } from '@deepseek-ai/cordis'
 import type { ProjectEntry } from './identity.js'
 import type { ActionOptions, EvidenceEntry, Provenance } from './memory.js'
 import type { RunAudit } from '../consolidation/index.js'
@@ -43,6 +44,8 @@ export interface MemoryDeps {
   setEnabled(next: boolean): Promise<void>
   /** Whether automatic learning is on (both switches considered). */
   consolidationEnabled(): boolean
+  /** The injection scope carrying `llm`, resolved when a digest call is made. */
+  llmScope(): Context | undefined
   /** Bring the summary cache up to date after a write, or when a read notices it is behind. */
   refreshSummary?(agent: MemoryAgent): Promise<void>
   /** Injectable clock in epoch milliseconds. */

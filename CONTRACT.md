@@ -717,6 +717,10 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 
 /memory export [--user|--project] [--format md|json]
 
+/memory consolidate [--dry-run]
+
+/memory digest [--force]
+
 /memory enable
 /memory disable
 
@@ -729,6 +733,14 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 - `export` **完整输出或 fail loud**（超过 `exportInlineMaxBytes` 时提示加过滤条件），不得静默截断；
 - `clear` 无 `--yes` 时只报告将删除的条数；
 - `/memory` 命令**永远注册**，不受 `enabled` 影响。
+
+### 16.1 跨项目 digest（手动）
+
+- **输入**：`digest/state.json` 里 `lastScanAt` 之后生成的 project `summary.json`；没有 checkpoint 时取过去 24 小时；`--force` 取全部。
+- **两阶段**：第一次给 summary + 记录索引（id + title），模型返回要展开的 id；第二次给这些记录的正文。展开条数不设上限。
+- **输出**：只写 `digest/pending.json` 与 `pending.md`，**不写 Memory**；pending 成功写出后才推进 `lastScanAt`。
+- **候选校验**：title / content 非空、单行、content ≤500 字符、过 secret 筛查、`derived_from` 必须指向本次提供的记录。
+- **后续 apply（尚未实现）**：审核后写 user scope（`source: 'agent'`），并归档被消费的 project active 记录。
 
 ---
 

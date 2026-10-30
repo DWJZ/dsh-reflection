@@ -19,6 +19,7 @@ import { searchRecords } from './retrieval.js'
 import { archiveMemory, clearScope, forgetMemory } from './actions.js'
 import { STATUSES } from './schema.js'
 import { describeOutcome as describeConsolidation } from './consolidation/index.js'
+import { runDigest } from './digest/index.js'
 import { isAbsolute, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, MemoryDeps } from './types/deps.js'
@@ -44,7 +45,7 @@ export function registerMemoryCommands(ctx: Context, deps: MemoryDeps) {
     input: {
       hint: 'help · list [--user|--project] [--status …] · search <query> [--top n] · '
         + 'inspect|archive|forget <id> · clear --user|--project --yes · export [--format md|json] · '
-        + 'consolidate [--dry-run] · enable|disable · project bind|relink|show',
+        + 'consolidate [--dry-run] · digest [--force] · enable|disable · project bind|relink|show',
     },
     handler: (invocation: CommandInvocation) => run(deps, invocation),
   })
@@ -72,6 +73,7 @@ async function run(deps: MemoryDeps, invocation: CommandInvocation) {
       case 'clear': return await clearCommand(deps, invocation, flags)
       case 'export': return await exportCommand(deps, invocation, flags)
       case 'consolidate': return await consolidateCommand(deps, invocation, flags)
+      case 'digest': return await digestCommand(deps, invocation, flags)
       case 'enable': return enableCommand(deps, true)
       case 'disable': return enableCommand(deps, false)
       case 'project': return await projectCommand(deps, invocation, rest)
@@ -79,6 +81,31 @@ async function run(deps: MemoryDeps, invocation: CommandInvocation) {
     }
   } catch (failure) {
     return error(`dsh-reflection: ${failureMessage(failure)}`)
+  }
+}
+
+/**
+ * Run the manual cross-project digest and report where the pending file is.
+ * @param deps - what the command reads.
+ * @param invocation - the command invocation.
+ * @param flags - parsed flags.
+ * @returns the result text, or an error.
+ */
+async function digestCommand(deps: MemoryDeps, invocation: CommandInvocation, flags: Map<string, string>) {
+  if (deps.isEnabled() === false) return error('dsh-reflection is disabled; run /memory enable first')
+  try {
+    const outcome = await runDigest(deps, invocation.agent, { force: flags.has('force') === true })
+    if (outcome.status === 'error') return error(`dsh-reflection: ${outcome.message}`)
+    if (outcome.status === 'nothing-new') {
+      return ok(`No project summary moved since ${outcome.since ?? 'the beginning'}; nothing to digest.`)
+    }
+    return ok([
+      `Digest window: ${outcome.since ?? 'all available'} .. ${outcome.to}`,
+      `${String(outcome.candidates)} candidate(s), ${String(outcome.rejected)} rejected.`,
+      `Review: ${outcome.pendingPath}`,
+    ].join('\n'))
+  } catch (failure) {
+    return error(`dsh-reflection: digest failed: ${failureMessage(failure)}`)
   }
 }
 
@@ -354,6 +381,7 @@ function usageText(deps: MemoryDeps) {
     '/memory clear --user|--project --yes',
     '/memory export [--user|--project] [--format md|json]',
     '/memory consolidate [--dry-run [--show-raw]]',
+    '/memory digest [--force]',
     '/memory enable | /memory disable',
     '/memory project bind <path> | relink <old> <new> | show',
   ].join('\n')
