@@ -49,7 +49,7 @@ export const DEFAULT_MIN_CONFIDENCE = 0.8
  * @param context.existing - active Memory the model may target.
  * @param context.projectId - the current project, or null.
  * @param context.sessionId - the Session being consolidated.
- * @param context.minConfidence - the commit gate.
+ * @param context.minConfidence - the gate for rewrites; low-confidence adds are stored but filtered from serving.
  * @param context.quoteMaxChars - largest stored quote, in code points.
  * @param context.maxEvidencePerMemory - largest accepted evidence list.
  * @param context.now - clock, injectable for tests.
@@ -186,7 +186,10 @@ export function reviewOperation(operation: unknown, context: ReviewContext): Rev
   if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
     return { kind: 'rejected', reason: 'confidence must be a number in [0, 1]', code: 'confidence-not-a-number' }
   }
-  if (confidence < context.minConfidence) {
+  if (confidence < context.minConfidence && action !== 'add') {
+    // Rewriting a served record with a low-confidence replacement would retire
+    // the old fact and hide the new one; an addition has no such collateral, so
+    // it is stored and kept out of serving by the confidence filter instead.
     return { kind: 'rejected', reason: `confidence ${String(confidence)} is below the floor ${String(context.minConfidence)}`, code: 'confidence-below-floor' }
   }
 

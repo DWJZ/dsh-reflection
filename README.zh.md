@@ -129,7 +129,7 @@ envelope 的固定部分 —— 计数、文件路径、指向单条文件的说
 | `enabled` | `true` | 自动学习开关；显式写入不受影响 |
 | `autoCommit` | `true` | `false` 时完全停止自动学习：不排期、不调模型、不花 token。事件照旧采集，所以你主动敲 `/memory consolidate` 仍可用；只看不写用 `--dry-run` |
 | `debounceMs` | `10000` | agent 空闲多久后开始整理这一轮 |
-| `minConfidence` | `0.8` | 低于此值的提案被丢弃，不落库 |
+| `minConfidence` | `0.8` | 服务门槛：低于此值的 add 落库但不进摘要/搜索；低于此值的改写直接拒绝 |
 | `maxRelevantEventsPerBatch` | `200` | 交给模型的最大窗口 |
 | `maxTrajectoryBytesPerBatch` | `65536` | 渲染后轨迹的 UTF-8 上限，最小 128 |
 | `maxBatchesPerRun` | `4` | 单次 run 最多消费几个窗口；更长的积压留给后续 run 继续排空 |

@@ -41,6 +41,8 @@ export interface SummaryServiceOptions {
   logger?: { warn(message: string | Error): void; debug?(message: string): void } | undefined
   /** Injection budget the summary is written for. */
   summaryBudgetBytes: number
+  /** Records below this confidence are stored but excluded from the summary. */
+  minConfidence: number
   /** Injectable clock, in epoch milliseconds. */
   now?(): number
 }
@@ -89,6 +91,7 @@ export function createSummaryService(options: SummaryServiceOptions) {
       scopeLabel,
       ...projectPath === undefined ? {} : { projectPath },
       budgetBytes: contentBudget,
+      minConfidence: options.minConfidence,
     })
     const call = (text: string) => streamModelText(llm, {
       session,

@@ -108,7 +108,7 @@ Memory 的物理位置不可配置：内部恒为 `path.join(resolvedDshHome, 'm
 | `enabled` | boolean | `true` | — |
 | `autoCommit` | boolean | `true` | — |
 | `debounceMs` | integer | `10000` | `>= 0` |
-| `minConfidence` | number | `0.8` | `[0, 1]` |
+| `minConfidence` | number | `0.8` | `[0, 1]`；add 的服务门槛，改写则直接拒绝 |
 | `maxRelevantEventsPerBatch` | integer | `200` | `>= 1` |
 | `maxTrajectoryBytesPerBatch` | integer | `65536` | `>= 128`（UTF-8 字节，作用于整条序列化 entry） |
 | `maxBatchesPerRun` | integer | `4` | `>= 1`（单次 run 消费的窗口上限） |
@@ -178,7 +178,8 @@ ID 用 `crypto.randomUUID()` 加前缀：`mem_<uuid>`、`proj_<uuid>`。不自�
 Storage schema 允许 `confidence ∈ [0, 1]`。Phase 1 writer **永远写 1.0**：
 
 - `memory_remember` 不接受 `confidence` 参数，显式写入的记录一律 `1.0`（用户直接要求的事实不是概率判断）；
-- **Phase 2 的自动写入持久化 reviewed 置信度**：ADD / SUPERSEDE 用模型给的值，UPDATE 把它写进被改写的记录。低于 `consolidation.minConfidence` 的提案不会到达这一步；
+- **Phase 2 的自动写入持久化 reviewed 置信度**：ADD / SUPERSEDE 用模型给的值，UPDATE 把它写进被改写的记录。
+- **低于 `consolidation.minConfidence`**：`add` 仍写入 store 并保留真实 confidence，但**不进入 summary/注入、不参与 `memory_search`**（`memory_get` 按 id 仍可读）；`update` / `supersede` 仍直接拒绝 —— 否则旧记录被退役、新记录又被过滤，等于丢记忆。
 - **显式 update 写入 `0.95`**（`EXPLICIT_UPDATE_CONFIDENCE`），既不沿用被改写记录的旧值，也不自称为 `1.0`：用户重申了内容，所以他确定；但这条记录是在别人的判断之上被修正的，不是他直接新建的；
 - Phase 1 ranking 不使用 confidence；
 - canonical 中 `[0, 1]` 都是合法 schema（不是只有 1.0）；
@@ -641,7 +642,7 @@ Phase 1 不做 semantic retrieval，只做 scope filtering、keyword matching（
 
 比较时对 ASCII 做 case folding（**仅用于比较，不改动存储**）；重复判定（§8.2）保持大小写敏感。
 
-过滤顺序：scope → 打分 → top_k。只有 `status === 'active'` 参与普通检索。confidence 不参与排名。
+过滤顺序：scope → **confidence floor（`consolidation.minConfidence`）** → 打分 → top_k。只有 `status === 'active'` 参与普通检索。confidence 不参与排名。
 
 接口：
 
@@ -668,7 +669,7 @@ the index lists every record by title and id; each record has its own file under
 规则：
 
 - **不注入任何一条记录的正文。** envelope 只含：固定 notice、两个 scope 的 active 计数、类别计数、最后更新时间、两个 `memories.json` 的绝对路径，以及指向 `memories/<id>.md` 的说明。
-- **摘要由模型写。** 提示词里每条记录带 `[explicit]` / `[agent]` 标签：`[explicit]` 是用户明确要求，`[agent]` 是自动汇总或跨项目 digest 提炼的经验，按参考处理，冲突时 `[explicit]` 优先。store revision 变化后（显式写入与 consolidation 写入都会等待刷新；读取发现落后时也会后台补刷新），用该 Session 自己的 route 生成，写进该 scope 的 `summary.json`（`revision` / `generated_at` / `model` / `budget` / `content`）。注入**只读缓存**，同步路径上不调用模型。摘要调用不设插件侧输出上限，沿用 provider 自己的上限；提示词给的是**正文预算**（`summaryBudgetBytes` 减去固定信封预留 600 字节）。正文超过预算时重新生成，最多 3 次；仍超出则按正文预算截断并记 `warn`，只有 `content` 会被截断。缓存的 `budget` 与当前配置不一致时视为过期：下一次读取重新生成。失败第一次记 `warn`，后续重试降到 `debug`，避免坏 route 刷屏。这个检查在每次生成之后、写缓存之前立即执行，不暴露独立命令。
+- **摘要由模型写。** 低于 `consolidation.minConfidence` 的记录不进入摘要提示词（仍留在 store/index）。提示词里每条记录带 `[explicit]` / `[agent]` 标签：`[explicit]` 是用户明确要求，`[agent]` 是自动汇总或跨项目 digest 提炼的经验，按参考处理，冲突时 `[explicit]` 优先。store revision 变化后（显式写入与 consolidation 写入都会等待刷新；读取发现落后时也会后台补刷新），用该 Session 自己的 route 生成，写进该 scope 的 `summary.json`（`revision` / `generated_at` / `model` / `budget` / `content`）。注入**只读缓存**，同步路径上不调用模型。摘要调用不设插件侧输出上限，沿用 provider 自己的上限；提示词给的是**正文预算**（`summaryBudgetBytes` 减去固定信封预留 600 字节）。正文超过预算时重新生成，最多 3 次；仍超出则按正文预算截断并记 `warn`，只有 `content` 会被截断。缓存的 `budget` 与当前配置不一致时视为过期：下一次读取重新生成。失败第一次记 `warn`，后续重试降到 `debug`，避免坏 route 刷屏。这个检查在每次生成之后、写缓存之前立即执行，不暴露独立命令。
 - 缓存描述的 revision 落后时仍然注入 —— 过时的摘要优于没有摘要 —— 由后台刷新追上。
 - **固定部分永不为了腾地方而裁掉**：超 `summaryBudgetBytes` 时先裁模型写的那段（按 UTF-8 字节切，不劈开字符，末尾补 `…`）。连固定部分都放不下时整个 envelope 为 `''`。
 - 两个 scope 都没有 active 记录时不注入。
@@ -943,12 +944,12 @@ dsh-reflection/*         → 内部事件：同上，另按命名空间排除（
 
 ```text
 计划读不出来（非对象 / operations 非数组）→ 整批失败，mark 不动
-单个操作站不住脚（目标无效、evidence 不实、低于置信度、命中 secret）→ 丢弃该操作并记原因，其余照常提交，窗口消费
+单个操作站不住脚（目标无效、evidence 不实、改写低于置信度、命中 secret）→ 丢弃该操作并记原因，其余照常提交，窗口消费；低于置信度的 add 是例外，写入但不服务
 ```
 
 `update` / `supersede` 的 scope **继承自目标记录**，模型给出的 scope 被忽略，因此一次改写不能把事实挪到另一个 project。
 
-置信度门槛 `minConfidence` 默认 `0.8`；低于门槛视为不持久化。
+置信度门槛 `minConfidence` 默认 `0.8`：低于门槛的 `add` 仍持久化但不服务；低于门槛的 `update`/`supersede` 拒绝。
 
 ## P2-5. 提交与失败语义
 
@@ -1055,7 +1056,7 @@ Phase 1 的 secret writer-policy 同样适用于 Phase 2：新增文本（新 co
 - [ ] 人类轮次门禁生效；无人类轮次的窗口被消费且不调用模型
 - [ ] 模型只能提议 add / update / supersede / noop；删除类操作被拒
 - [ ] evidence seq 逐条核验；provenance 由插件构造
-- [ ] 低于 `minConfidence` 的操作不落盘
+- [ ] 低于 `minConfidence` 的 add 落盘但不进 summary/search；改写被拒绝
 - [ ] update / supersede 的 scope 继承自目标
 - [ ] 提交复用 Phase 1 actions（同一锁、同一 secret 扫描、同一视图重建）
 - [ ] 成功 / NOOP / 仅 ignorable / 无人类轮次 → mark 前进

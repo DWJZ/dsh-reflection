@@ -154,7 +154,7 @@ Set fields on the plugin row in the profile's `cordis.patch.yml`:
 | `enabled` | `true` | automatic learning on or off; explicit writes are unaffected |
 | `autoCommit` | `true` | `false` stops automatic learning entirely: no debounce, no model call, no tokens. Events are still collected, so `/memory consolidate` works when you run it; `--dry-run` reports without writing |
 | `debounceMs` | `10000` | how long an idle agent waits before its turn is consolidated |
-| `minConfidence` | `0.8` | a proposal below this is dropped rather than stored |
+| `minConfidence` | `0.8` | serving floor: a lower-confidence add is stored but kept out of the summary/search; a lower-confidence rewrite is dropped |
 | `maxRelevantEventsPerBatch` | `200` | largest window offered to the model |
 | `maxTrajectoryBytesPerBatch` | `65536` | UTF-8 ceiling for the rendered trajectory, minimum 128 |
 | `maxBatchesPerRun` | `4` | how many windows one run may consume; a longer backlog is drained across runs |

@@ -127,16 +127,16 @@ check('a seq with no event behind it is refused',
     .includes('no event behind it'))
 
 console.log('the confidence gate')
-check('a low-confidence proposal is dropped',
-  review(addition({ confidence: 0.5 })).reason.includes('below the floor 0.8'))
+check('a low-confidence add is stored',
+  review(addition({ confidence: 0.5 })).kind === 'accepted')
 check('the floor is inclusive',
   review(addition({ confidence: 0.8 })).kind === 'accepted')
 check('a missing confidence is refused',
   review(addition({ confidence: undefined })).reason.includes('[0, 1]'))
 check('a confidence above 1 is refused',
   review(addition({ confidence: 1.5 })).reason.includes('[0, 1]'))
-check('a raising floor drops what it should',
-  review(addition({ confidence: 0.85 }), { minConfidence: 0.9 }).reason.includes('below the floor 0.9'))
+check('a raising floor still stores an add',
+  review(addition({ confidence: 0.85 }), { minConfidence: 0.9 }).kind === 'accepted')
 
 console.log('content')
 check('empty content is refused', review(addition({ content: '   ' })).reason === 'content is empty')
@@ -162,6 +162,8 @@ console.log('update and supersede act on what exists')
 const superseding = { action: 'supersede', target_id: 'mem_old', title: 'The project now uses pnpm.', content: 'The project now uses pnpm.', confidence: 0.95, evidence_event_seqs: [201] }
 const supersedeReview = review(superseding)
 check('a supersede against an active Memory is accepted', supersedeReview.kind === 'accepted')
+check('a low-confidence rewrite is refused',
+  review({ ...superseding, confidence: 0.5 }).reason.includes('below the floor 0.8'))
 check('it inherits the target scope', supersedeReview.operation?.scope === 'project')
 check('it keeps the target id', supersedeReview.operation?.target_id === 'mem_old')
 check('it keeps the target project', supersedeReview.operation?.projectId === 'proj_a')
@@ -237,12 +239,11 @@ const plan = validate.reviewPlan({ operations: [
   addition({ content: 'too vague', confidence: 0.2 }),
   { action: 'forget', target_id: 'mem_old' },
 ] }, context())
-check('the one good operation was accepted', plan.accepted.length === 1)
+check('the good operation and the low-confidence add are accepted', plan.accepted.length === 2)
 check('the noop is separated from the failures',
   plan.noopReasons.length === 1 && plan.noopReasons[0] === 'transient task state')
-check('the dropped operations carry reasons', plan.rejected.length === 2)
-check('a dropped operation names why',
-  plan.rejected[0].reason.includes('below the floor') && plan.rejected[1].reason.includes('not an automatic action'))
+check('only the forbidden operation is rejected', plan.rejected.length === 1)
+check('the rejected operation names why', plan.rejected[0].reason.includes('not an automatic action'))
 console.log('a plan that cannot be read fails the batch')
 let planRefused = false
 try {

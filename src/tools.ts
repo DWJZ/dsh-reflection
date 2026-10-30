@@ -151,6 +151,7 @@ function searchTool(deps: MemoryDeps) {
         query: args.query,
         scope: args.scope,
         projectId: project?.project_id,
+        minConfidence: deps.config.consolidation.minConfidence,
         // Schema validation is the caller's job upstream; clamping here keeps the
         // bound true even when a caller bypasses the declared maximum.
         topK: Math.min(args.top_k ?? deps.config.retrievalTopK, deps.config.retrievalTopK),

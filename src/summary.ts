@@ -182,9 +182,12 @@ export function buildSummaryPrompt(input: {
   scopeLabel: string
   projectPath?: string | undefined
   budgetBytes: number
+  /** Records below this confidence are stored but not summarised. */
+  minConfidence?: number | undefined
 }): string {
+  const floor = input.minConfidence ?? 0
   const active = input.records
-    .filter((record: MemoryRecord) => record.status === 'active')
+    .filter((record: MemoryRecord) => record.status === 'active' && record.confidence >= floor)
     .slice()
     .sort((left: MemoryRecord, right: MemoryRecord) => (left.updated_at < right.updated_at ? 1 : left.updated_at > right.updated_at ? -1 : 0))
   const header = input.projectPath === undefined

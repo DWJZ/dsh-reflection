@@ -118,6 +118,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
     llmScope: () => llmScope ?? undefined,
     logger,
     summaryBudgetBytes: settings.summaryBudgetBytes,
+    minConfidence: settings.consolidation.minConfidence,
   })
   let enabled = resolveEnabled(settings.memoryDir, settings.enabled)
   let runtimeFiber: { dispose(): Promise<void> } | null = null
@@ -402,8 +403,8 @@ function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
   const userStore = readStore(deps.scopes.user.storePath)
   const projectLayout = project === null ? undefined : deps.scopes.project(project.project_id)
   const projectStore = projectLayout === undefined ? undefined : readStore(projectLayout.storePath)
-  const userRecords = activeRecords(userStore.records)
-  const projectRecords = projectStore === undefined ? [] : activeRecords(projectStore.records)
+  const userRecords = activeRecords(userStore.records, deps.config.consolidation.minConfidence)
+  const projectRecords = projectStore === undefined ? [] : activeRecords(projectStore.records, deps.config.consolidation.minConfidence)
   if (userRecords.length === 0 && projectRecords.length === 0) return ''
 
   const userSummary = readSummaryDocument(deps.scopes.user.summaryPath)

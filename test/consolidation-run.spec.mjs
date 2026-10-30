@@ -519,7 +519,7 @@ console.log('project scope without a project is dropped, not committed')
     .some(record => record.content === 'Prefer Chinese for explanations.'))
 }
 
-console.log('a low-confidence proposal never reaches the store')
+console.log('a low-confidence add is stored but not served')
 {
   const harnessed = harness({
     sessionId: 'session_unsure',
@@ -529,9 +529,10 @@ console.log('a low-confidence proposal never reaches the store')
   })
   observe(harnessed, [human(80, 'maybe?')])
   const outcome = await harnessed.consolidation.consolidate(harnessed.agent)
-  check('nothing was written', outcome.operations.add === 0)
+  check('the record is written', outcome.operations.add === 1 && outcome.rejected === 0, JSON.stringify(outcome))
   check('the window was still consumed', markOf('session_unsure') === 80)
-  check('the drop is reported', outcome.rejected === 1)
+  const stored = readStore(userLayout(MEMORY).storePath).records.find(record => record.title === 'The user may prefer X.')
+  check('the stored record keeps its low confidence', stored?.confidence === 0.4, JSON.stringify(stored?.confidence))
 }
 
 console.log('a dry run neither writes nor advances')
@@ -838,6 +839,17 @@ console.log('a still-over-long plan is rejected with metadata')
       && outcome.rejected_details[0].action === 'add'
       && outcome.rejected_details[0].content_length === 501,
     JSON.stringify(outcome.rejected_details))
+}
+
+console.log('a low-confidence add is stored')
+{
+  const low = '{"operations":[{"action":"add","scope":"project","title":"A low-confidence fact.","content":"A low-confidence fact.","confidence":0.5,"evidence_event_seqs":[1]}]}'
+  const harnessed = harness({ sessionId: 'session_low_confidence', modelAnswer: low })
+  observe(harnessed, [human(1, '这个项目可能有什么')])
+  const outcome = await harnessed.consolidation.consolidate(harnessed.agent)
+  check('the operation is committed', outcome.operations.add === 1 && outcome.rejected === 0, JSON.stringify(outcome))
+  const stored = readStore(projectLayout(MEMORY, PROJECT).storePath).records.find(record => record.title === 'A low-confidence fact.')
+  check('the stored record keeps its confidence', stored?.confidence === 0.5, JSON.stringify(stored?.confidence))
 }
 
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)

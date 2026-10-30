@@ -51,6 +51,8 @@ export interface SearchRequest {
   projectId?: string | null | undefined
   /** Largest number of results. */
   topK?: number | undefined
+  /** Records below this confidence are stored but not searched. */
+  minConfidence?: number | undefined
 }
 
 export function foldForSearch(text: string) {
