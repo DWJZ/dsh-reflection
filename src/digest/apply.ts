@@ -122,11 +122,6 @@ export async function applyDigest(
     writeAtomic(layout.pendingPath, renderPendingDocument(nextPending))
     writeAtomic(layout.pendingMarkdownPath, renderPendingMarkdown(nextPending))
   }
-  try {
-    await deps.refreshSummary?.(agent)
-  } catch (failure) {
-    deps.logger.warn(`dsh-reflection: summaries were not refreshed after apply: ${failureMessage(failure)}`)
-  }
   const session = agent?.session
   if (session !== undefined) {
     try {
@@ -141,6 +136,17 @@ export async function applyDigest(
     } catch (failure) {
       deps.logger.warn(`dsh-reflection: could not record the digest apply audit: ${failureMessage(failure)}`)
     }
+  }
+  // The writes are done; regenerating two summaries is a model call and can take
+  // minutes. Leave it to the read path (which refreshes stale summaries) and
+  // return, or the command looks hung.
+  try {
+    const refresh = deps.refreshSummary?.(agent)
+    if (refresh !== undefined) {
+      void refresh.catch(failure => deps.logger.warn(`dsh-reflection: summaries were not refreshed after apply: ${failureMessage(failure)}`))
+    }
+  } catch (failure) {
+    deps.logger.warn(`dsh-reflection: summaries were not refreshed after apply: ${failureMessage(failure)}`)
   }
   return {
     status: 'applied',

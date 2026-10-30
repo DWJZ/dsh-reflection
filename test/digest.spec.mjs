@@ -194,7 +194,8 @@ console.log('an invalid JSON answer is retried and kept for diagnosis')
 console.log('apply promotes the candidate and archives only its sources')
 {
   const agent = { session: { id: 'session-digest-apply', requestHeader: () => ({ config: { provider: 'p', model: 'm' } }) } }
-  const applied = await digestApply.applyDigest(deps, agent)
+  const applyDeps = { ...deps, refreshSummary: () => new Promise(() => {}) }
+  const applied = await digestApply.applyDigest(applyDeps, agent)
   check('one candidate is applied', applied.status === 'applied' && applied.applied === 1, JSON.stringify(applied))
   check('both sources are archived', applied.archived === 2)
   const userStore = readStore(userLayout(MEMORY).storePath)

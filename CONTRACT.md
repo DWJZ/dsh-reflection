@@ -743,7 +743,7 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 - **输出**：只写 `digest/pending.json` 与 `pending.md`，**不写 Memory**；pending 成功写出后才推进 `lastScanAt`。
 - **候选校验**：title / content 非空、单行、content ≤500 字符、过 secret 筛查、`derived_from` 必须指向本次提供的记录，且必须覆盖**至少两个不同 workspace**（否则记 `fewer than two workspaces` 拒绝）；只有单个 workspace 更新的窗口因此产生 0 条。
 - **候选必须标 `scope`**：`practice` 才能进 pending；`project` 记 `project-specific` 拒绝，缺 scope 同样拒绝。`practice` 指工具、调试、环境、流程、协作这类"怎么做"且换语言/领域仍成立的经验；语言/框架/架构/API/CLI/模块边界/数据模型/领域规则属于 `project`，留在项目里。
-- **apply**：`/memory digest --apply [1,3,...]`。每条候选写一条 user scope 记录（`source: 'agent'`，带 `derived_from`）；只归档候选**引用到的** project 记录，归档记录带 `comment` 说明"已提升到 user scope"。全部应用后 pending 移到 `digest/history/`，未应用的部分留在 pending。
+- **apply**：`/memory digest --apply [1,3,...]`。每条候选写一条 user scope 记录（`source: 'agent'`，带 `derived_from`）；只归档候选**引用到的** project 记录，归档记录带 `comment` 说明"已提升到 user scope"。全部应用后 pending 移到 `digest/history/`，未应用的部分留在 pending。写入和审计完成后命令即返回；**摘要重新生成放后台**（user 与当前 project 的 summary 是两次模型调用，可能数分钟），下一次读取发现 summary 落后时自行刷新。
 - 已有 pending 时再次 digest 会拒绝，避免覆盖未审的候选；`--force` 重新扫描并替换 pending。
 - **apply 只消费 pending 里的候选**（按编号选择），不接受任意记录 id；候选之外的记录不会被 apply 写入或归档。
 - **审计**：run 与 apply 各往 Session 追加一条 `plugin:dsh-reflection/digest` 记录，含窗口、项目 summary revision、展开/归档的记录 id、候选/拒绝计数、模型与 usage，**不含正文**。
