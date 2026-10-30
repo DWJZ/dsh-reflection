@@ -26,6 +26,8 @@ export interface DigestRunAudit {
   candidates: number
   /** Candidates dropped by validation. */
   rejected: number
+  /** Why each was dropped, with the candidate title when one existed. */
+  rejected_details?: { reason: string; title?: string | undefined; workspaces?: number | undefined }[] | undefined
   /** Provider/model of the synthesis call. */
   model?: string | undefined
   /** Token usage of the calls. */

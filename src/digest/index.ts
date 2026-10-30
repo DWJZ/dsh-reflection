@@ -16,7 +16,7 @@ import { streamModelText } from '../consolidation/model.js'
 import type { ConsolidationUsage } from '../consolidation/model.js'
 import { collectScopes } from './collect.js'
 import { DIGEST_SYSTEM, expansionPrompt, parseCandidates, parseExpansion, synthesisPrompt } from './prompt.js'
-import type { DigestCandidate } from './prompt.js'
+import type { DigestCandidate, RejectedCandidate } from './prompt.js'
 import type { ExpandedRecord } from './prompt.js'
 import { renderPendingDocument, renderPendingMarkdown } from './pending.js'
 import type { PendingDigest } from './pending.js'
@@ -37,6 +37,7 @@ export type DigestResult =
     rejected: number
     pendingPath: string
     preview: DigestCandidate[]
+    rejectedDetails: RejectedCandidate[]
   }
   | { status: 'error'; message: string }
 
@@ -120,6 +121,7 @@ export async function runDigest(
     model: `${phaseTwo.provider}/${phaseTwo.model}`,
     ...usage === undefined ? {} : { usage },
     candidates: checked.accepted,
+    ...checked.rejected.length === 0 ? {} : { rejected: checked.rejected },
   }
   writeAtomic(layout.pendingPath, renderPendingDocument(pending))
   writeAtomic(layout.pendingMarkdownPath, renderPendingMarkdown(pending))
@@ -138,6 +140,7 @@ export async function runDigest(
       expanded: expanded.map(item => item.record.id),
       candidates: checked.accepted.length,
       rejected: checked.rejected.length,
+      rejected_details: checked.rejected,
       model: `${phaseTwo.provider}/${phaseTwo.model}`,
       ...usage === undefined ? {} : { usage },
     })
@@ -153,6 +156,7 @@ export async function runDigest(
     rejected: checked.rejected.length,
     pendingPath: layout.pendingPath,
     preview: checked.accepted,
+    rejectedDetails: checked.rejected,
   }
 }
 

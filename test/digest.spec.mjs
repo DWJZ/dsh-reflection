@@ -118,6 +118,7 @@ console.log('the model answers are checked')
   check('one candidate is accepted', parsed.accepted.length === 1, JSON.stringify(parsed))
   check('missing title, secret, unknown source and one workspace are rejected', parsed.rejected.length === 4, JSON.stringify(parsed.rejected))
   check('the one-workspace candidate says why', parsed.rejected.some(entry => entry.reason === 'fewer than two workspaces'))
+  check('the rejected candidate carries its title and workspace count', parsed.rejected.some(entry => entry.reason === 'fewer than two workspaces' && entry.title === 'One workspace.' && entry.workspaces === 1))
 }
 
 console.log('a digest run writes pending and advances the checkpoint')

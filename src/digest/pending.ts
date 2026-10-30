@@ -7,7 +7,7 @@
  * @module dsh-reflection/digest/pending
  */
 
-import type { DigestCandidate } from './prompt.js'
+import type { DigestCandidate, RejectedCandidate } from './prompt.js'
 
 /** One pending digest document. */
 export interface PendingDigest {
@@ -18,6 +18,7 @@ export interface PendingDigest {
   model?: string | undefined
   usage?: { inputTokens: number; outputTokens: number; totalTokens?: number | undefined } | undefined
   candidates: DigestCandidate[]
+  rejected?: RejectedCandidate[] | undefined
 }
 
 /**
@@ -46,6 +47,13 @@ export function renderPendingMarkdown(entry: PendingDigest): string {
   if (entry.candidates.length === 0) {
     lines.push('', 'No candidate experience was proposed for this window.')
     return `${lines.join('\n')}\n`
+  }
+  if (entry.rejected !== undefined && entry.rejected.length > 0) {
+    lines.push('', '## Rejected', '')
+    for (const rejected of entry.rejected) {
+      const workspaces = rejected.workspaces === undefined ? '' : ` (${String(rejected.workspaces)} workspace)`
+      lines.push(`- ${rejected.title === undefined || rejected.title === '' ? '(no title)' : rejected.title} — ${rejected.reason}${workspaces}`)
+    }
   }
   for (const [index, candidate] of entry.candidates.entries()) {
     lines.push('', `## ${String(index + 1)}. ${candidate.title}`, '')

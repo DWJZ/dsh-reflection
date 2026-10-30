@@ -120,6 +120,13 @@ async function digestCommand(deps: MemoryDeps, invocation: CommandInvocation, fl
       lines.push('', `${String(index + 1)}. ${candidate.title}`, `   ${candidate.content}`)
       lines.push(`   sources: ${candidate.derived_from.map(source => `${source.project_id}/${source.record_id}`).join(' · ')}`)
     }
+    if (outcome.rejectedDetails.length > 0) {
+      lines.push('', 'Rejected:')
+      for (const rejected of outcome.rejectedDetails) {
+        const workspaces = rejected.workspaces === undefined ? '' : ` (${String(rejected.workspaces)} workspace)`
+        lines.push(`- ${rejected.title === undefined || rejected.title === '' ? '(no title)' : rejected.title} — ${rejected.reason}${workspaces}`)
+      }
+    }
     return ok(lines.join('\n'))
   } catch (failure) {
     return error(`dsh-reflection: digest failed: ${failureMessage(failure)}`)

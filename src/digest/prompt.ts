@@ -21,6 +21,14 @@ export interface ExpandedRecord {
   record: MemoryRecord
 }
 
+/** One candidate that failed validation, kept for review. */
+export interface RejectedCandidate {
+  reason: string
+  title?: string | undefined
+  /** Distinct source projects the candidate actually named, when it got that far. */
+  workspaces?: number | undefined
+}
+
 /** One proposed cross-project experience. */
 export interface DigestCandidate {
   title: string
@@ -147,12 +155,12 @@ export function parseExpansion(text: string, allowed: ReadonlySet<string>): stri
  */
 export function parseCandidates(text: string, allowedSources: ReadonlySet<string>): {
   accepted: DigestCandidate[]
-  rejected: { reason: string }[]
+  rejected: RejectedCandidate[]
 } {
   const parsed = readObject(text)
   const rows = Array.isArray(parsed.candidates) ? parsed.candidates : []
   const accepted: DigestCandidate[] = []
-  const rejected: { reason: string }[] = []
+  const rejected: RejectedCandidate[] = []
   const seen = new Set<string>()
   for (const row of rows) {
     if (typeof row !== 'object' || row === null || Array.isArray(row)) {
@@ -162,13 +170,13 @@ export function parseCandidates(text: string, allowedSources: ReadonlySet<string
     const candidate = row as Record<string, unknown>
     const title = typeof candidate.title === 'string' ? candidate.title.trim() : ''
     const content = typeof candidate.content === 'string' ? candidate.content.trim() : ''
-    if (title === '') { rejected.push({ reason: 'title is missing' }); continue }
-    if (/[\n\r\u2028\u2029]/u.test(title)) { rejected.push({ reason: 'title is not a single line' }); continue }
-    if (content === '') { rejected.push({ reason: 'content is empty' }); continue }
-    if (/[\n\r\u2028\u2029]/u.test(content)) { rejected.push({ reason: 'content is not a single line' }); continue }
-    if (charLength(content) > MAX_CONTENT_CHARS) { rejected.push({ reason: `content is longer than ${String(MAX_CONTENT_CHARS)} characters` }); continue }
+    if (title === '') { rejected.push({ reason: 'title is missing', title: '' }); continue }
+    if (/[\n\r\u2028\u2029]/u.test(title)) { rejected.push({ reason: 'title is not a single line', title }); continue }
+    if (content === '') { rejected.push({ reason: 'content is empty', title }); continue }
+    if (/[\n\r\u2028\u2029]/u.test(content)) { rejected.push({ reason: 'content is not a single line', title }); continue }
+    if (charLength(content) > MAX_CONTENT_CHARS) { rejected.push({ reason: `content is longer than ${String(MAX_CONTENT_CHARS)} characters`, title }); continue }
     const secret = findSecretIn([title, content])
-    if (secret !== undefined) { rejected.push({ reason: `secret-detected:${secret.name}` }); continue }
+    if (secret !== undefined) { rejected.push({ reason: `secret-detected:${secret.name}`, title }); continue }
     const sources: { project_id: string; record_id: string }[] = []
     for (const source of Array.isArray(candidate.derived_from) ? candidate.derived_from : []) {
       if (typeof source !== 'object' || source === null) continue
@@ -177,13 +185,14 @@ export function parseCandidates(text: string, allowedSources: ReadonlySet<string
       if (!allowedSources.has(`${projectId}/${recordId}`)) continue
       sources.push({ project_id: projectId, record_id: recordId })
     }
-    if (sources.length === 0) { rejected.push({ reason: 'no known source record' }); continue }
-    if (new Set(sources.map(source => source.project_id)).size < 2) {
-      rejected.push({ reason: 'fewer than two workspaces' })
+    if (sources.length === 0) { rejected.push({ reason: 'no known source record', title }); continue }
+    const workspaces = new Set(sources.map(source => source.project_id)).size
+    if (workspaces < 2) {
+      rejected.push({ reason: 'fewer than two workspaces', title, workspaces })
       continue
     }
     const key = normalizeContent(content)
-    if (seen.has(key)) { rejected.push({ reason: 'duplicate candidate' }); continue }
+    if (seen.has(key)) { rejected.push({ reason: 'duplicate candidate', title }); continue }
     seen.add(key)
     accepted.push({ title, content, derived_from: sources })
   }
