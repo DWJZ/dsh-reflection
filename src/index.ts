@@ -38,6 +38,8 @@ import { createSummaryService } from './summary-service.js'
 import { resolveEnabled, writeEnabled } from './settings.js'
 import type { PluginConfig } from './settings.js'
 import { createCollector } from './consolidation/collector.js'
+import { recordAccesses } from './actions.js'
+import { renderRecall, selectRecall, userTextFromEvent } from './recall.js'
 import { createHistoryReader } from './history.js'
 import { createConsolidation } from './consolidation/index.js'
 import { isAbsolute, relative } from 'node:path'
@@ -78,6 +80,9 @@ export const inject = ['commands']
  * @param ctx - Cordis context of this plugin's fiber.
  * @param config - raw plugin configuration from cordis.yml, possibly absent.
  */
+/** Latest user text per Session, used for automatic recall. */
+const lastUserBySession = new Map<string, string>()
+
 export function apply(ctx: Context, config: PluginConfig) {
   const settings = resolveConfig(config, process.env, ctx.logger)
   const controller = createController(ctx, settings)
@@ -338,6 +343,8 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
       // `/memory consolidate`, which a person runs deliberately.
       const learningOnItsOwn = () => collecting() && settings.consolidation.autoCommit === true
       const disposeEvents = ctx.on('session/event', (session: MemorySession, event) => {
+        const userText = userTextFromEvent(event)
+        if (userText !== undefined) lastUserBySession.set(session.id, userText)
         if (collecting()) consolidation.observe(session, event)
       })
       const disposeStatus = ctx.on('agent/status', ({ agent, status }) => {
@@ -420,9 +427,29 @@ function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
   const parts: string[] = []
   if (userSummary !== undefined) parts.push(`user: ${userSummary.content.trim()}`)
   if (projectSummary !== undefined) parts.push(`project: ${projectSummary.content.trim()}`)
+  const summaryText = parts.join('\n\n')
+  const allRecords = [...userRecords, ...projectRecords]
+  const query = lastUserBySession.get(agent.session.id) ?? ''
+  const now = deps.now?.() ?? Date.now()
+  const recall = selectRecall(allRecords, summaryText, query, project?.project_id, now, 3)
+  if (recall.length > 0) {
+    void recordAccesses({
+      scopes: deps.scopes,
+      tombstones: deps.tombstones,
+      lockTimeoutMs: deps.config.lockTimeoutMs,
+      staleLockMs: deps.config.staleLockMs,
+      maxEvidencePerMemory: deps.config.maxEvidencePerMemory,
+      logger: deps.logger,
+    }, recall.map(entry => ({
+      id: entry.id,
+      scope: entry.scope,
+      projectId: entry.project_id,
+      weight: 0.25,
+    })))
+  }
 
-  return renderMemorySummary({
-    summaryText: parts.join('\n\n'),
+  const envelope = renderMemorySummary({
+    summaryText,
     counts: {
       user: userRecords.length,
       project: projectRecords.length,
@@ -434,6 +461,9 @@ function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
     },
     budgetBytes: deps.config.summaryBudgetBytes,
   })
+  const recallBlock = renderRecall(recall)
+  if (envelope === '') return recallBlock
+  return recallBlock === '' ? envelope : `${envelope}\n\n${recallBlock}`
 }
 
 /**

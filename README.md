@@ -72,6 +72,11 @@ the index lists every record by title and id; each record has its own file under
 </memory-summary>
 ```
 
+When the latest user message matches records, the plugin also appends a small
+`<memory-recall>` block listing the top three by id and title; it is found
+without a model call. Titles already mentioned by the summary are omitted. The
+agent opens one with `memory_get`.
+
 The summary text is written by the model: after a write or a consolidation that
 wrote Memory, the Session's own model is asked to describe what Memory holds, and
 the answer is cached in `summary.json` beside the records. The commit waits for
