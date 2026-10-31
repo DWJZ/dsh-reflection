@@ -556,7 +556,6 @@ export function createConsolidation(options: ConsolidationOptions) {
         existing,
         projectId,
         sessionId,
-        minConfidence: config.minConfidence,
         quoteMaxChars: config.quoteMaxChars,
         maxEvidencePerMemory: config.maxEvidencePerMemory,
         now,

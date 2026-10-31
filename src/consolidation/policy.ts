@@ -60,6 +60,7 @@ export const CONSOLIDATION_SYSTEM_PROMPT = [
   'Answer with one JSON object, and nothing else:',
   '{"operations":[{"action":"add","scope":"project","title":"The project uses pnpm for dependencies.","content":"The project uses pnpm.","confidence":0.94,"evidence_event_seqs":[190,198]}],"feedback":[{"target_id":"mem_...","verdict":"confirmed"}]}',
   'confidence is a number in [0,1] reflecting how well the trajectory grounds the fact.',
+  'A rewrite must be at least as confident as the record it targets; a lower-confidence rewrite is rejected.',
   '',
   'Every add, update and supersede must include a one-line title:',
   MEMORY_TITLE_RULE,

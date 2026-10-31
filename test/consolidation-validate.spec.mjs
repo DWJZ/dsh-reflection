@@ -37,6 +37,7 @@ const ACTIVE = [{
   title: 'The project uses npm.',
   content: 'The project uses npm.',
   status: 'active',
+  confidence: 0.9,
 }]
 
 /**
@@ -52,7 +53,6 @@ const context = (overrides = {}) => ({
   existing: ACTIVE,
   projectId: 'proj_a',
   sessionId: 'session_a',
-  minConfidence: validate.DEFAULT_MIN_CONFIDENCE,
   quoteMaxChars: 200,
   maxEvidencePerMemory: 8,
   now: () => Date.parse('2026-09-29T00:00:00.000Z'),
@@ -135,8 +135,8 @@ check('a missing confidence is refused',
   review(addition({ confidence: undefined })).reason.includes('[0, 1]'))
 check('a confidence above 1 is refused',
   review(addition({ confidence: 1.5 })).reason.includes('[0, 1]'))
-check('a raising floor still stores an add',
-  review(addition({ confidence: 0.85 }), { minConfidence: 0.9 }).kind === 'accepted')
+check('a low-confidence add stays accepted',
+  review(addition({ confidence: 0.2 })).kind === 'accepted')
 
 console.log('content')
 check('empty content is refused', review(addition({ content: '   ' })).reason === 'content is empty')
@@ -162,8 +162,10 @@ console.log('update and supersede act on what exists')
 const superseding = { action: 'supersede', target_id: 'mem_old', title: 'The project now uses pnpm.', content: 'The project now uses pnpm.', confidence: 0.95, evidence_event_seqs: [201] }
 const supersedeReview = review(superseding)
 check('a supersede against an active Memory is accepted', supersedeReview.kind === 'accepted')
-check('a low-confidence rewrite is refused',
-  review({ ...superseding, confidence: 0.5 }).reason.includes('below the floor 0.8'))
+check('a rewrite below the target confidence is refused',
+  review({ ...superseding, confidence: 0.5 }).reason.includes("below the target's 0.9"))
+check('a rewrite at the target confidence is accepted',
+  review({ ...superseding, confidence: 0.6 }, { existing: [{ ...ACTIVE[0], confidence: 0.5 }] }).kind === 'accepted')
 check('it inherits the target scope', supersedeReview.operation?.scope === 'project')
 check('it keeps the target id', supersedeReview.operation?.target_id === 'mem_old')
 check('it keeps the target project', supersedeReview.operation?.projectId === 'proj_a')

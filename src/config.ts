@@ -47,7 +47,6 @@ export const DEFAULTS = Object.freeze({
     enabled: true,
     autoCommit: true,
     debounceMs: 10000,
-    minConfidence: 0.8,
     maxRelevantEventsPerBatch: 200,
     maxTrajectoryBytesPerBatch: 65536,
     maxBatchesPerRun: 4,
@@ -118,15 +117,10 @@ function consolidationSetting(value: unknown): MemoryConsolidationSettings {
   }
   // Configuration arrives unvalidated; each field is narrowed where it is read.
   const source = value as Record<string, unknown>
-  const minConfidence = numberSetting(source.minConfidence, fallback.minConfidence, 'consolidation.minConfidence', 0)
-  if (minConfidence > 1) {
-    throw new TypeError(`dsh-reflection: config consolidation.minConfidence must be at most 1, got ${JSON.stringify(source.minConfidence)}`)
-  }
   return {
     enabled: booleanSetting(source.enabled, fallback.enabled, 'consolidation.enabled'),
     autoCommit: booleanSetting(source.autoCommit, fallback.autoCommit, 'consolidation.autoCommit'),
     debounceMs: integerSetting(source.debounceMs, fallback.debounceMs, 'consolidation.debounceMs', 0),
-    minConfidence,
     maxRelevantEventsPerBatch: integerSetting(source.maxRelevantEventsPerBatch, fallback.maxRelevantEventsPerBatch, 'consolidation.maxRelevantEventsPerBatch', 1),
     maxTrajectoryBytesPerBatch: integerSetting(source.maxTrajectoryBytesPerBatch, fallback.maxTrajectoryBytesPerBatch, 'consolidation.maxTrajectoryBytesPerBatch', MIN_TRAJECTORY_BYTES_PER_BATCH),
     maxBatchesPerRun: integerSetting(source.maxBatchesPerRun, fallback.maxBatchesPerRun, 'consolidation.maxBatchesPerRun', 1),

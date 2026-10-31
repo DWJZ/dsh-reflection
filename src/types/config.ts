@@ -18,7 +18,6 @@ export interface MemoryConsolidationSettings {
   /** How long an idle agent waits before its turn is consolidated. */
   debounceMs: number
   /** A proposal below this is dropped rather than stored. */
-  minConfidence: number
   /** Largest window offered to the model, in events. */
   maxRelevantEventsPerBatch: number
   /** UTF-8 ceiling for the rendered trajectory. */

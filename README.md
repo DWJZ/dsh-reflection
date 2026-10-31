@@ -147,14 +147,13 @@ Set fields on the plugin row in the profile's `cordis.patch.yml`:
 | `maxEvidencePerMemory` | `8` | Provenance entries a writer keeps per record; an older, longer list still loads |
 | `exportInlineMaxBytes` | `24000` | Largest inline `/memory export` |
 | `evidenceQuoteMaxChars` | `200` | Longest stored quote, in code points |
-| `consolidation` | see below | Automatic learning; `{ enabled, autoCommit, debounceMs, minConfidence, maxRelevantEventsPerBatch, maxTrajectoryBytesPerBatch, maxBatchesPerRun }` |
+| `consolidation` | see below | Automatic learning; `{ enabled, autoCommit, debounceMs, maxRelevantEventsPerBatch, maxTrajectoryBytesPerBatch, maxBatchesPerRun }` |
 
 | sub-field | default | meaning |
 |---|---|---|
 | `enabled` | `true` | automatic learning on or off; explicit writes are unaffected |
 | `autoCommit` | `true` | `false` stops automatic learning entirely: no debounce, no model call, no tokens. Events are still collected, so `/memory consolidate` works when you run it; `--dry-run` reports without writing |
 | `debounceMs` | `10000` | how long an idle agent waits before its turn is consolidated |
-| `minConfidence` | `0.8` | rewrite gate: a lower-confidence add is stored (and served); a lower-confidence rewrite is dropped. Confidence also sets a record's initial decay scale |
 | `maxRelevantEventsPerBatch` | `200` | largest window offered to the model |
 | `maxTrajectoryBytesPerBatch` | `65536` | UTF-8 ceiling for the rendered trajectory, minimum 128 |
 | `maxBatchesPerRun` | `4` | how many windows one run may consume; a longer backlog is drained across runs |

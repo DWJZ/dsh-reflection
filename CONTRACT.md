@@ -108,7 +108,6 @@ Memory 的物理位置不可配置：内部恒为 `path.join(resolvedDshHome, 'm
 | `enabled` | boolean | `true` | — |
 | `autoCommit` | boolean | `true` | — |
 | `debounceMs` | integer | `10000` | `>= 0` |
-| `minConfidence` | number | `0.8` | `[0, 1]`；只作为改写门槛；add 一律落库，confidence 决定初始衰减尺度 |
 | `maxRelevantEventsPerBatch` | integer | `200` | `>= 1` |
 | `maxTrajectoryBytesPerBatch` | integer | `65536` | `>= 128`（UTF-8 字节，作用于整条序列化 entry） |
 | `maxBatchesPerRun` | integer | `4` | `>= 1`（单次 run 消费的窗口上限） |
@@ -179,7 +178,7 @@ Storage schema 允许 `confidence ∈ [0, 1]`。Phase 1 writer **永远写 1.0**
 
 - `memory_remember` 不接受 `confidence` 参数，显式写入的记录一律 `1.0`（用户直接要求的事实不是概率判断）；
 - **Phase 2 的自动写入持久化 reviewed 置信度**：ADD / SUPERSEDE 用模型给的值，UPDATE 把它写进被改写的记录。
-- **低于 `consolidation.minConfidence`**：`add` 照常写入 store、进入 summary/注入并参与 `memory_search`，confidence 低只会让它的初始 stability 更短、priority 更低；`update` / `supersede` 仍直接拒绝 —— 否则旧记录被退役、新记录又因低置信被弱化，等于丢记忆。
+- **confidence 只用于两处**：新记录的初始 stability；以及改写门槛 —— `update`/`supersede` 要求新 confidence **不低于目标记录的 confidence**，否则拒绝（`confidence-below-target`）。`add` 一律写入并参与服务，confidence 低只影响它的 stability/priority。
 
 ### 5.2 使用、衰减与反馈
 
@@ -967,7 +966,7 @@ dsh-reflection/*         → 内部事件：同上，另按命名空间排除（
 
 `update` / `supersede` 的 scope **继承自目标记录**，模型给出的 scope 被忽略，因此一次改写不能把事实挪到另一个 project。
 
-置信度门槛 `minConfidence` 默认 `0.8`：只拦截改写（`update`/`supersede`）；`add` 一律持久化并参与服务，置信度决定初始 `stability_days` 和 priority。
+改写门槛是**相对**的：新 confidence 低于目标记录的 confidence 时拒绝（`confidence-below-target`）；`add` 一律持久化并参与服务，置信度决定初始 `stability_days` 和 priority。
 
 ## P2-5. 提交与失败语义
 
@@ -1074,7 +1073,7 @@ Phase 1 的 secret writer-policy 同样适用于 Phase 2：新增文本（新 co
 - [ ] 人类轮次门禁生效；无人类轮次的窗口被消费且不调用模型
 - [ ] 模型只能提议 add / update / supersede / noop；删除类操作被拒
 - [ ] evidence seq 逐条核验；provenance 由插件构造
-- [ ] 低于 `minConfidence` 的 add 照常落盘并参与服务；改写被拒绝
+- [ ] 低于目标 confidence 的改写被拒绝；add 一律落盘并参与服务
 - [ ] update / supersede 的 scope 继承自目标
 - [ ] 提交复用 Phase 1 actions（同一锁、同一 secret 扫描、同一视图重建）
 - [ ] 成功 / NOOP / 仅 ignorable / 无人类轮次 → mark 前进

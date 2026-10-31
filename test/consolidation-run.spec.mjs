@@ -115,7 +115,6 @@ function harness(options = {}) {
     sessionEvents: options.sessionEvents ?? true,
     config: {
       debounceMs: 10,
-      minConfidence: 0.8,
       maxRelevantEventsPerBatch: 200,
       maxTrajectoryBytesPerBatch: 65536,
       maxBatchesPerRun: options.maxBatchesPerRun ?? 4,
