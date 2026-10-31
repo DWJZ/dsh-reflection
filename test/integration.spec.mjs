@@ -436,6 +436,25 @@ const projectCRequest = requestText(projectCSession.log)
 check('the request carries a summary envelope', projectCRequest.includes('<memory-summary>'))
 check('the summary never inlines the retired fact', !projectCRequest.includes('该项目使用 npm'))
 
+console.log('Automatic recall surfaces a record the summary omits')
+const RECALL_PROJECT = projectDir('recall-project')
+const RECALL_CONTENT = 'Orion 的部署口令是 recall-token-blue'
+const recorded = await runSession({
+  project: RECALL_PROJECT,
+  task: `记住 ${RECALL_CONTENT}`,
+  remember: { mode: 'add', title: 'Orion 部署口令', content: RECALL_CONTENT, scope: 'project' },
+})
+check('the recall fixture run succeeds', recorded.code === 0, recorded.stderr.slice(0, 400))
+const recallProjectId = projectIdFor(RECALL_PROJECT)
+const recallRecord = recallProjectId === undefined ? undefined : recordsOf(recallProjectId).find(record => record.content === RECALL_CONTENT)
+check('the recall fixture record exists', recallRecord !== undefined)
+const recallSession = await runSession({ project: RECALL_PROJECT, task: 'Orion 的部署口令是什么？只回答口令本身。' })
+check('the recall session runs', recallSession.code === 0, recallSession.stderr.slice(0, 400))
+const recallRequest = requestText(recallSession.log)
+check('the request carries an automatic recall block', recallRequest.includes('<memory-recall>'))
+check('the recall names the record id', recallRecord !== undefined && recallRequest.includes(recallRecord.id))
+check('the recall names the record title', recallRequest.includes('Orion 部署口令'))
+
 console.log('Memory survives a compaction')
 // `/compact` reduces the stored history through the harness's own entry point. A later
 // run adopts that same Session, so its request is assembled from the reduced surface:

@@ -56,6 +56,7 @@ const { userLayout, projectLayout, registryLayout, tombstoneLayout } = await imp
 const { bindProject } = await import(pathToFileURL(join(PLUGIN, 'src/registry.ts')).href)
 const { addMemory, supersedeMemory } = await import(pathToFileURL(join(PLUGIN, 'src/actions.ts')).href)
 const { readStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.ts')).href)
+const { writeSummaryDocument } = await import(pathToFileURL(join(PLUGIN, 'src/summary.ts')).href)
 
 /**
  * Replace the run token in one scenario value.
@@ -429,6 +430,23 @@ async function runScenario(scenario, index, control = false) {
       } else if (step.supersede !== undefined) {
         if (control) continue
         await supersede({ home, ...step.supersede, ...step.supersede.project === undefined ? {} : { projectId: projectIds.get(step.supersede.project) } })
+        steps.push({ label, pass: true })
+      } else if (step.writeSummary !== undefined) {
+        if (control) continue
+        const { scope, project, content } = step.writeSummary
+        const projectId = project === undefined ? undefined : projectIds.get(project)
+        const memoryDir = join(home, 'memory')
+        const layout = scope === 'user'
+          ? userLayout(memoryDir)
+          : projectLayout(memoryDir, projectId)
+        const store = readStore(layout.storePath)
+        writeSummaryDocument(layout.summaryPath, {
+          content,
+          revision: store.revision,
+          generated_at: new Date().toISOString(),
+          model: 'eval',
+          budget: 2400,
+        })
         steps.push({ label, pass: true })
       } else if (step.assertStore !== undefined) {
         // Artifact assertions describe what the plugin wrote; the control run has

@@ -15,7 +15,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "记住：这个项目用 pnpm 管理依赖，构建命令是 pnpm run build:edge-{{run}}。"
+            "task": "\u8bb0\u4f4f\uff1a\u8fd9\u4e2a\u9879\u76ee\u7528 pnpm \u7ba1\u7406\u4f9d\u8d56\uff0c\u6784\u5efa\u547d\u4ee4\u662f pnpm run build:edge-{{run}}\u3002"
           }
         },
         {
@@ -30,7 +30,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "这个项目的构建命令是什么？只回答命令本身。"
+            "task": "\u8fd9\u4e2a\u9879\u76ee\u7684\u6784\u5efa\u547d\u4ee4\u662f\u4ec0\u4e48\uff1f\u53ea\u56de\u7b54\u547d\u4ee4\u672c\u8eab\u3002"
           },
           "expect": {
             "all": [
@@ -50,7 +50,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "记住：我偏好中文回答，并且每次回答开头加一行 START-{{run}}。"
+            "task": "\u8bb0\u4f4f\uff1a\u6211\u504f\u597d\u4e2d\u6587\u56de\u7b54\uff0c\u5e76\u4e14\u6bcf\u6b21\u56de\u7b54\u5f00\u5934\u52a0\u4e00\u884c START-{{run}}\u3002"
           }
         },
         {
@@ -64,7 +64,7 @@
         {
           "session": {
             "project": "beta",
-            "task": "用户要求每次回答开头加什么？只回答那一行。"
+            "task": "\u7528\u6237\u8981\u6c42\u6bcf\u6b21\u56de\u7b54\u5f00\u5934\u52a0\u4ec0\u4e48\uff1f\u53ea\u56de\u7b54\u90a3\u4e00\u884c\u3002"
           },
           "expect": {
             "all": [
@@ -88,7 +88,7 @@
             "records": [
               {
                 "category": "state",
-                "content": "这个项目用 pnpm 管理依赖。"
+                "content": "\u8fd9\u4e2a\u9879\u76ee\u7528 pnpm \u7ba1\u7406\u4f9d\u8d56\u3002"
               }
             ]
           }
@@ -96,7 +96,7 @@
         {
           "session": {
             "project": "beta",
-            "task": "这个项目用什么包管理器？如果记忆里没有明确记录，就只回答「不知道」。"
+            "task": "\u8fd9\u4e2a\u9879\u76ee\u7528\u4ec0\u4e48\u5305\u7ba1\u7406\u5668\uff1f\u5982\u679c\u8bb0\u5fc6\u91cc\u6ca1\u6709\u660e\u786e\u8bb0\u5f55\uff0c\u5c31\u53ea\u56de\u7b54\u300c\u4e0d\u77e5\u9053\u300d\u3002"
           },
           "expect": {
             "abstain": true,
@@ -121,7 +121,7 @@
             "records": [
               {
                 "category": "state",
-                "content": "这个项目的构建命令是 npm run build。"
+                "content": "\u8fd9\u4e2a\u9879\u76ee\u7684\u6784\u5efa\u547d\u4ee4\u662f npm run build\u3002"
               }
             ]
           }
@@ -130,14 +130,14 @@
           "supersede": {
             "scope": "project",
             "project": "alpha",
-            "from": "这个项目的构建命令是 npm run build。",
-            "to": "这个项目的构建命令是 pnpm run build:edge-{{run}}。"
+            "from": "\u8fd9\u4e2a\u9879\u76ee\u7684\u6784\u5efa\u547d\u4ee4\u662f npm run build\u3002",
+            "to": "\u8fd9\u4e2a\u9879\u76ee\u7684\u6784\u5efa\u547d\u4ee4\u662f pnpm run build:edge-{{run}}\u3002"
           }
         },
         {
           "session": {
             "project": "alpha",
-            "task": "这个项目的构建命令是什么？只回答命令本身。"
+            "task": "\u8fd9\u4e2a\u9879\u76ee\u7684\u6784\u5efa\u547d\u4ee4\u662f\u4ec0\u4e48\uff1f\u53ea\u56de\u7b54\u547d\u4ee4\u672c\u8eab\u3002"
           },
           "expect": {
             "all": [
@@ -153,7 +153,7 @@
               "build:edge-{{run}}"
             ],
             "excludesExact": [
-              "这个项目的构建命令是 npm run build。"
+              "\u8fd9\u4e2a\u9879\u76ee\u7684\u6784\u5efa\u547d\u4ee4\u662f npm run build\u3002"
             ]
           }
         },
@@ -181,35 +181,35 @@
             "records": [
               {
                 "category": "state",
-                "content": "alpha 的发布分支是 release/2026-11-{{run}}。"
+                "content": "alpha \u7684\u53d1\u5e03\u5206\u652f\u662f release/2026-11-{{run}}\u3002"
               },
               {
                 "category": "state",
-                "content": "alpha 的构建产物在 dist/。"
+                "content": "alpha \u7684\u6784\u5efa\u4ea7\u7269\u5728 dist/\u3002"
               },
               {
                 "category": "state",
-                "content": "alpha 用 vitest 跑单元测试。"
+                "content": "alpha \u7528 vitest \u8dd1\u5355\u5143\u6d4b\u8bd5\u3002"
               },
               {
                 "category": "decision",
-                "content": "alpha 的日志字段是 ts、level、msg。"
+                "content": "alpha \u7684\u65e5\u5fd7\u5b57\u6bb5\u662f ts\u3001level\u3001msg\u3002"
               },
               {
                 "category": "state",
-                "content": "alpha 的配置从 config/default.json 读取。"
+                "content": "alpha \u7684\u914d\u7f6e\u4ece config/default.json \u8bfb\u53d6\u3002"
               },
               {
                 "category": "state",
-                "content": "alpha 的部署脚本是 scripts/deploy.sh。"
+                "content": "alpha \u7684\u90e8\u7f72\u811a\u672c\u662f scripts/deploy.sh\u3002"
               },
               {
                 "category": "state",
-                "content": "alpha 的 token 有效期是 30 分钟。"
+                "content": "alpha \u7684 token \u6709\u6548\u671f\u662f 30 \u5206\u949f\u3002"
               },
               {
                 "category": "state",
-                "content": "alpha 的缓存是 Redis。"
+                "content": "alpha \u7684\u7f13\u5b58\u662f Redis\u3002"
               }
             ]
           }
@@ -217,7 +217,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "alpha 的发布分支叫什么？只回答分支名。"
+            "task": "alpha \u7684\u53d1\u5e03\u5206\u652f\u53eb\u4ec0\u4e48\uff1f\u53ea\u56de\u7b54\u5206\u652f\u540d\u3002"
           },
           "expect": {
             "all": [
@@ -236,7 +236,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "我们决定这个项目统一改用 pnpm 管理依赖，构建命令定为 pnpm run build:edge-{{run}}。另外，我今天喝了咖啡。我的 API key 是 sk-eval-0123456789abcdef，别记下来。"
+            "task": "\u6211\u4eec\u51b3\u5b9a\u8fd9\u4e2a\u9879\u76ee\u7edf\u4e00\u6539\u7528 pnpm \u7ba1\u7406\u4f9d\u8d56\uff0c\u6784\u5efa\u547d\u4ee4\u5b9a\u4e3a pnpm run build:edge-{{run}}\u3002\u53e6\u5916\uff0c\u6211\u4eca\u5929\u559d\u4e86\u5496\u5561\u3002\u6211\u7684 API key \u662f sk-eval-0123456789abcdef\uff0c\u522b\u8bb0\u4e0b\u6765\u3002"
           },
           "drive": true
         },
@@ -248,7 +248,7 @@
               "build:edge-{{run}}"
             ],
             "excludes": [
-              "咖啡",
+              "\u5496\u5561",
               "sk-eval"
             ]
           }
@@ -256,7 +256,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "这个项目的构建命令是什么？只回答命令本身。"
+            "task": "\u8fd9\u4e2a\u9879\u76ee\u7684\u6784\u5efa\u547d\u4ee4\u662f\u4ec0\u4e48\uff1f\u53ea\u56de\u7b54\u547d\u4ee4\u672c\u8eab\u3002"
           },
           "expect": {
             "all": [
@@ -279,27 +279,27 @@
             "records": [
               {
                 "category": "state",
-                "content": "alpha 用 pnpm 管理依赖，构建命令是 pnpm build。"
+                "content": "alpha \u7528 pnpm \u7ba1\u7406\u4f9d\u8d56\uff0c\u6784\u5efa\u547d\u4ee4\u662f pnpm build\u3002"
               },
               {
                 "category": "state",
-                "content": "alpha 的发布分支是 release/2026-11-{{run}}。"
+                "content": "alpha \u7684\u53d1\u5e03\u5206\u652f\u662f release/2026-11-{{run}}\u3002"
               },
               {
                 "category": "state",
-                "content": "alpha 用 vitest 跑单元测试。"
+                "content": "alpha \u7528 vitest \u8dd1\u5355\u5143\u6d4b\u8bd5\u3002"
               },
               {
                 "category": "state",
-                "content": "alpha 的配置从 config/default.json 读取。"
+                "content": "alpha \u7684\u914d\u7f6e\u4ece config/default.json \u8bfb\u53d6\u3002"
               },
               {
                 "category": "decision",
-                "content": "alpha 的日志字段是 ts、level、msg。"
+                "content": "alpha \u7684\u65e5\u5fd7\u5b57\u6bb5\u662f ts\u3001level\u3001msg\u3002"
               },
               {
                 "category": "state",
-                "content": "alpha 的缓存是 Redis。"
+                "content": "alpha \u7684\u7f13\u5b58\u662f Redis\u3002"
               }
             ]
           }
@@ -307,7 +307,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "这个项目大概有哪些约定？一句话概括就行。"
+            "task": "\u8fd9\u4e2a\u9879\u76ee\u5927\u6982\u6709\u54ea\u4e9b\u7ea6\u5b9a\uff1f\u4e00\u53e5\u8bdd\u6982\u62ec\u5c31\u884c\u3002"
           }
         },
         {
@@ -335,7 +335,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "少用'臂'这个词，很难理解，用点常用词。"
+            "task": "\u5c11\u7528'\u81c2'\u8fd9\u4e2a\u8bcd\uff0c\u5f88\u96be\u7406\u89e3\uff0c\u7528\u70b9\u5e38\u7528\u8bcd\u3002"
           },
           "drive": true
         },
@@ -343,25 +343,25 @@
           "assertStore": {
             "scope": "user",
             "contains": [
-              "臂"
+              "\u81c2"
             ],
             "any": [
-              "少用",
-              "别用",
-              "不要用",
-              "避免",
-              "不用",
-              "不推荐",
-              "不爱听",
-              "不爱",
-              "不喜欢",
-              "讨厌",
-              "改用",
-              "换成",
-              "通俗",
-              "口语化",
-              "日常说法",
-              "常用词",
+              "\u5c11\u7528",
+              "\u522b\u7528",
+              "\u4e0d\u8981\u7528",
+              "\u907f\u514d",
+              "\u4e0d\u7528",
+              "\u4e0d\u63a8\u8350",
+              "\u4e0d\u7231\u542c",
+              "\u4e0d\u7231",
+              "\u4e0d\u559c\u6b22",
+              "\u8ba8\u538c",
+              "\u6539\u7528",
+              "\u6362\u6210",
+              "\u901a\u4fd7",
+              "\u53e3\u8bed\u5316",
+              "\u65e5\u5e38\u8bf4\u6cd5",
+              "\u5e38\u7528\u8bcd",
               "avoid",
               "not use",
               "don't use",
@@ -376,29 +376,29 @@
         {
           "session": {
             "project": "beta",
-            "task": "用户对用词有什么要求？只回答一句。"
+            "task": "\u7528\u6237\u5bf9\u7528\u8bcd\u6709\u4ec0\u4e48\u8981\u6c42\uff1f\u53ea\u56de\u7b54\u4e00\u53e5\u3002"
           },
           "expect": {
             "all": [
-              "臂"
+              "\u81c2"
             ],
             "any": [
-              "少用",
-              "别用",
-              "不要用",
-              "避免",
-              "不用",
-              "不推荐",
-              "不爱听",
-              "不爱",
-              "不喜欢",
-              "讨厌",
-              "改用",
-              "换成",
-              "通俗",
-              "口语化",
-              "日常说法",
-              "常用词",
+              "\u5c11\u7528",
+              "\u522b\u7528",
+              "\u4e0d\u8981\u7528",
+              "\u907f\u514d",
+              "\u4e0d\u7528",
+              "\u4e0d\u63a8\u8350",
+              "\u4e0d\u7231\u542c",
+              "\u4e0d\u7231",
+              "\u4e0d\u559c\u6b22",
+              "\u8ba8\u538c",
+              "\u6539\u7528",
+              "\u6362\u6210",
+              "\u901a\u4fd7",
+              "\u53e3\u8bed\u5316",
+              "\u65e5\u5e38\u8bf4\u6cd5",
+              "\u5e38\u7528\u8bcd",
               "avoid",
               "not use",
               "don't use",
@@ -421,7 +421,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "记住：这个项目的构建命令是 npm run build。"
+            "task": "\u8bb0\u4f4f\uff1a\u8fd9\u4e2a\u9879\u76ee\u7684\u6784\u5efa\u547d\u4ee4\u662f npm run build\u3002"
           }
         },
         {
@@ -436,7 +436,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "现在改用 pnpm 了，构建命令是 pnpm run build:edge-{{run}}。把这条记忆更新掉，不要留下旧的。"
+            "task": "\u73b0\u5728\u6539\u7528 pnpm \u4e86\uff0c\u6784\u5efa\u547d\u4ee4\u662f pnpm run build:edge-{{run}}\u3002\u628a\u8fd9\u6761\u8bb0\u5fc6\u66f4\u65b0\u6389\uff0c\u4e0d\u8981\u7559\u4e0b\u65e7\u7684\u3002"
           }
         },
         {
@@ -447,14 +447,14 @@
               "build:edge-{{run}}"
             ],
             "excludesExact": [
-              "这个项目的构建命令是 npm run build。"
+              "\u8fd9\u4e2a\u9879\u76ee\u7684\u6784\u5efa\u547d\u4ee4\u662f npm run build\u3002"
             ]
           }
         },
         {
           "session": {
             "project": "alpha",
-            "task": "这个项目的构建命令是什么？只回答命令本身。"
+            "task": "\u8fd9\u4e2a\u9879\u76ee\u7684\u6784\u5efa\u547d\u4ee4\u662f\u4ec0\u4e48\uff1f\u53ea\u56de\u7b54\u547d\u4ee4\u672c\u8eab\u3002"
           },
           "expect": {
             "all": [
@@ -473,7 +473,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "记住：我的 API key 是 sk-eval-0123456789abcdef，以后调用接口都用它。"
+            "task": "\u8bb0\u4f4f\uff1a\u6211\u7684 API key \u662f sk-eval-0123456789abcdef\uff0c\u4ee5\u540e\u8c03\u7528\u63a5\u53e3\u90fd\u7528\u5b83\u3002"
           }
         },
         {
@@ -504,7 +504,7 @@
         {
           "session": {
             "project": "alpha",
-            "task": "记一下：我的 API key 是 sk-eval-0123456789abcdef。"
+            "task": "\u8bb0\u4e00\u4e0b\uff1a\u6211\u7684 API key \u662f sk-eval-0123456789abcdef\u3002"
           },
           "drive": true
         },
@@ -539,8 +539,8 @@
             "scope": "user",
             "records": [
               {
-                "title": "跨 workspace 的交付检查约定",
-                "content": "跨 workspace 约定：报告任务完成情况时，必须带上标记 X-{{run}}。"
+                "title": "\u8de8 workspace \u7684\u4ea4\u4ed8\u68c0\u67e5\u7ea6\u5b9a",
+                "content": "\u8de8 workspace \u7ea6\u5b9a\uff1a\u62a5\u544a\u4efb\u52a1\u5b8c\u6210\u60c5\u51b5\u65f6\uff0c\u5fc5\u987b\u5e26\u4e0a\u6807\u8bb0 X-{{run}}\u3002"
               }
             ]
           }
@@ -548,11 +548,49 @@
         {
           "session": {
             "project": "beta",
-            "task": "报告这次任务完成情况。"
+            "task": "\u62a5\u544a\u8fd9\u6b21\u4efb\u52a1\u5b8c\u6210\u60c5\u51b5\u3002"
           },
           "expect": {
             "all": [
               "X-{{run}}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "auto-recall",
+      "projects": [
+        "alpha"
+      ],
+      "steps": [
+        {
+          "seed": {
+            "scope": "project",
+            "project": "alpha",
+            "records": [
+              {
+                "title": "Orion \u90e8\u7f72\u53e3\u4ee4",
+                "content": "Orion \u7684\u90e8\u7f72\u53e3\u4ee4\u662f {{run}}-blue\u3002"
+              }
+            ]
+          }
+        },
+        {
+          "writeSummary": {
+            "scope": "project",
+            "project": "alpha",
+            "content": "\u672c\u9879\u76ee\u4f7f\u7528 pnpm\uff1b\u6458\u8981\u523b\u610f\u4e0d\u5305\u542b\u90e8\u7f72\u53e3\u4ee4\u3002"
+          }
+        },
+        {
+          "session": {
+            "project": "alpha",
+            "task": "Orion \u7684\u90e8\u7f72\u53e3\u4ee4\u662f\u4ec0\u4e48\uff1f\u53ea\u56de\u7b54\u53e3\u4ee4\u672c\u8eab\u3002"
+          },
+          "expect": {
+            "all": [
+              "{{run}}-blue"
             ]
           }
         }

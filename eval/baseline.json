@@ -21,7 +21,8 @@
       "update-write",
       "secret-screening",
       "consolidation-secret",
-      "cross-workspace-experience"
+      "cross-workspace-experience",
+      "auto-recall"
     ]
   }
 }

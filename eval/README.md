@@ -55,7 +55,7 @@ with the plugin mounted from this checkout and a real model. Each scenario gets
 a fresh `DSH_HOME` and its own project directories, so runs cannot leak into
 each other or into your real Memory.
 
-The twelve scenarios:
+The thirteen scenarios:
 
 | Scenario | What it proves |
 |---|---|
@@ -71,6 +71,7 @@ The twelve scenarios:
 | `update-write` | a later instruction updates the existing record instead of leaving the old one active |
 | `secret-screening` | an explicit write of a credential is refused |
 | `cross-workspace-experience` | a user-scope practice is visible and followed in a different project |
+| `auto-recall` | a record absent from the summary is surfaced by the latest user message |
 
 `consolidation-write` drives `/memory consolidate` through the shipped driver fixture, because the plugin's own debounce cannot fire inside a one-shot run.
 
