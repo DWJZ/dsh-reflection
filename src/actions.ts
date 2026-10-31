@@ -24,6 +24,7 @@ import { findSecretIn } from './redact.js'
 import { MAX_CONTENT_CHARS, charLength, newMemoryId, normalizeContent, validateMemory } from './schema.js'
 import type { ActionInput, ActionOptions, AddInput, ArchiveInput, EvidenceEntry, MemoryRecord, MemoryScope, MemoryStore, RecordTarget, ScopeInput, ScopeLayout, TargetedInput, TombstoneEntry } from './types/memory.js'
 import { failureMessage } from './errors.js'
+import { accessUpdate, initialStability, stabilityDays } from './priority.js'
 
 /**
  * Confidence of a record the user asked for directly.
@@ -89,6 +90,7 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
     if (duplicate !== undefined) return { changed: false, result: { action: 'noop', id: duplicate.id, reason: 'duplicate' } }
 
     const at = nowIso(options)
+    const confidence = requireConfidence(input.confidence, PHASE1_CONFIDENCE)
     const record = {
       id: newMemoryId(),
       scope: input.scope,
@@ -96,7 +98,7 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
       title,
       content,
       source: input.source ?? 'explicit',
-      confidence: requireConfidence(input.confidence, PHASE1_CONFIDENCE),
+      confidence,
       evidence: input.evidence === undefined ? [] : [input.evidence],
       created_at: at,
       updated_at: at,
@@ -104,6 +106,11 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
       superseded_by: null,
       ...input.derivedFrom === undefined ? {} : { derived_from: input.derivedFrom },
       ...input.comment === undefined ? {} : { comment: input.comment },
+      access_count: 0,
+      stability_days: initialStability(confidence),
+      ease: 2.5,
+      feedback_confirmed: 0,
+      feedback_corrected: 0,
     }
     validateMemory(record, { maxEvidencePerMemory: options.maxEvidencePerMemory })
     return { changed: true, records: [...store.records, record], result: { action: 'added', id: record.id } }
@@ -168,6 +175,7 @@ export async function supersedeMemory(options: ActionOptions, input: TargetedInp
   return apply(options, located.layout, (store: MemoryStore) => {
     const current = requireActive(store, input.id)
     const at = nowIso(options)
+    const confidence = requireConfidence(input.confidence, PHASE1_CONFIDENCE)
     const replacement = {
       id: newMemoryId(),
       scope: current.scope,
@@ -175,12 +183,17 @@ export async function supersedeMemory(options: ActionOptions, input: TargetedInp
       title,
       content,
       source: input.source ?? 'explicit',
-      confidence: requireConfidence(input.confidence, PHASE1_CONFIDENCE),
+      confidence,
       evidence: input.evidence === undefined ? [] : [input.evidence],
       created_at: at,
       updated_at: at,
       status: 'active',
       superseded_by: null,
+      access_count: 0,
+      stability_days: initialStability(confidence),
+      ease: 2.5,
+      feedback_confirmed: 0,
+      feedback_corrected: 0,
     }
     validateMemory(replacement, { maxEvidencePerMemory: options.maxEvidencePerMemory })
     // The retired record keeps its created_at/updated_at: what changed is its
@@ -554,4 +567,105 @@ function noop(reason: unknown) {
  */
 function nowIso(options: ActionOptions) {
   return new Date((options.now ?? Date.now)()).toISOString()
+}
+
+/** One record to credit with a find. */
+export interface AccessHit {
+  id: string
+  scope: 'user' | 'project'
+  projectId?: string | null | undefined
+  /** 1 for memory_get, 0.25 for a search result. */
+  weight: number
+}
+
+/**
+ * Record that records were found, updating their decay metadata.
+ *
+ * Failures are warnings, not read failures: a search or get must still return
+ * its answer if the index write cannot happen.
+ * @param options - the action wiring.
+ * @param hits - records to credit.
+ * @returns nothing.
+ */
+export async function recordAccesses(options: ActionOptions, hits: readonly AccessHit[]) {
+  for (const hit of hits) {
+    if (!(hit.weight > 0) || hit.id === '') continue
+    const layout = hit.scope === 'user'
+      ? options.scopes.user
+      : options.scopes.project(hit.projectId ?? '')
+    try {
+      await apply(options, layout, (store: MemoryStore) => {
+        const current = store.records.find((record: MemoryRecord) => record.id === hit.id && record.status === 'active')
+        if (current === undefined) return { changed: false, result: { action: 'noop', id: hit.id, reason: 'not-active' } }
+        const next = { ...current, ...accessUpdate(current, hit.weight, nowIso(options)) }
+        validateMemory(next)
+        return {
+          changed: true,
+          records: store.records.map((record: MemoryRecord) => record.id === next.id ? next : record),
+          result: { action: 'noop', id: next.id, reason: 'access-recorded' },
+        }
+      })
+    } catch (failure) {
+      options.logger?.warn?.(`dsh-reflection: could not record access for ${hit.id}: ${String(failure instanceof Error ? failure.message : failure)}`)
+    }
+  }
+}
+
+/** One reviewed feedback verdict to apply. */
+export interface FeedbackUpdate {
+  id: string
+  scope: 'user' | 'project'
+  projectId?: string | null | undefined
+  verdict: 'confirmed' | 'corrected' | 'neutral'
+}
+
+/**
+ * Apply consolidation feedback to a record's decay metadata.
+ *
+ * Confirmed feedback grows stability by its ease and raises ease; corrected
+ * feedback halves stability and lowers ease; neutral does nothing. Failures are
+ * warnings: a feedback write must not fail the consolidation that already
+ * committed.
+ * @param options - the action wiring.
+ * @param updates - reviewed verdicts, already limited to records found in the run.
+ * @returns nothing.
+ */
+export async function applyFeedback(options: ActionOptions, updates: readonly FeedbackUpdate[]) {
+  for (const update of updates) {
+    if (update.verdict === 'neutral') continue
+    const layout = update.scope === 'user'
+      ? options.scopes.user
+      : options.scopes.project(update.projectId ?? '')
+    try {
+      await apply(options, layout, (store: MemoryStore) => {
+        const current = store.records.find((record: MemoryRecord) => record.id === update.id && record.status === 'active')
+        if (current === undefined) return { changed: false, result: { action: 'noop', id: update.id, reason: 'not-active' } }
+        const ease = current.ease ?? 2.5
+        const at = nowIso(options)
+        const next = update.verdict === 'confirmed'
+          ? {
+            ...current,
+            stability_days: Math.min(365, stabilityDays(current) * ease),
+            ease: Math.min(2.5, ease + 0.1),
+            feedback_confirmed: (current.feedback_confirmed ?? 0) + 1,
+            last_feedback_at: at,
+          }
+          : {
+            ...current,
+            stability_days: Math.max(1, stabilityDays(current) * 0.5),
+            ease: Math.max(1.3, ease - 0.2),
+            feedback_corrected: (current.feedback_corrected ?? 0) + 1,
+            last_feedback_at: at,
+          }
+        validateMemory(next)
+        return {
+          changed: true,
+          records: store.records.map((record: MemoryRecord) => record.id === next.id ? next : record),
+          result: { action: 'noop', id: next.id, reason: 'feedback-recorded' },
+        }
+      })
+    } catch (failure) {
+      options.logger?.warn?.(`dsh-reflection: could not record feedback for ${update.id}: ${String(failure instanceof Error ? failure.message : failure)}`)
+    }
+  }
 }

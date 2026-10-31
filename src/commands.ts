@@ -176,7 +176,7 @@ async function searchCommand(deps: MemoryDeps, invocation: CommandInvocation, re
   if (!Number.isInteger(topK) || topK < 1) return error('dsh-reflection: --top must be a positive integer')
   const found = searchRecords(
     readStore(deps.scopes.user.storePath).records.concat(projectRecords(deps, project)),
-    { query, scope, projectId: project?.project_id, topK, minConfidence: deps.config.consolidation.minConfidence },
+    { query, scope, projectId: project?.project_id, topK, now: Date.now() },
   )
   if (found.results.length === 0) return ok(`No Memory matches "${query}".`)
   return ok(found.results.map(hit => `${hit.id}  [${hit.scope}]  ${hit.content}`).join('\n'))

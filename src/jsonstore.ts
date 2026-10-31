@@ -46,6 +46,13 @@ interface IndexRow {
   superseded_by?: string | null
   comment?: string
   derived_from?: { project_id: string; record_id: string }[]
+  access_count?: number
+  last_access_at?: string
+  stability_days?: number
+  ease?: number
+  feedback_confirmed?: number
+  feedback_corrected?: number
+  last_feedback_at?: string
   /** Version 1 kept these in the index; version 2 reads them from the body. */
   content?: string
   evidence?: EvidenceEntry[]
@@ -148,6 +155,13 @@ function readRecords(storePath: string, document: StoreDocument): MemoryRecord[]
         superseded_by: row.superseded_by ?? null,
         ...row.comment === undefined ? {} : { comment: row.comment },
         ...row.derived_from === undefined ? {} : { derived_from: row.derived_from },
+        ...row.access_count === undefined ? {} : { access_count: row.access_count },
+        ...row.last_access_at === undefined ? {} : { last_access_at: row.last_access_at },
+        ...row.stability_days === undefined ? {} : { stability_days: row.stability_days },
+        ...row.ease === undefined ? {} : { ease: row.ease },
+        ...row.feedback_confirmed === undefined ? {} : { feedback_confirmed: row.feedback_confirmed },
+        ...row.feedback_corrected === undefined ? {} : { feedback_corrected: row.feedback_corrected },
+        ...row.last_feedback_at === undefined ? {} : { last_feedback_at: row.last_feedback_at },
       }
     }
     const bodyPath = join(recordsDir, `${row.id}.md`)
@@ -170,6 +184,13 @@ function readRecords(storePath: string, document: StoreDocument): MemoryRecord[]
       superseded_by: row.superseded_by ?? null,
       ...row.comment === undefined ? {} : { comment: row.comment },
       ...row.derived_from === undefined ? {} : { derived_from: row.derived_from },
+      ...row.access_count === undefined ? {} : { access_count: row.access_count },
+      ...row.last_access_at === undefined ? {} : { last_access_at: row.last_access_at },
+      ...row.stability_days === undefined ? {} : { stability_days: row.stability_days },
+      ...row.ease === undefined ? {} : { ease: row.ease },
+      ...row.feedback_confirmed === undefined ? {} : { feedback_confirmed: row.feedback_confirmed },
+      ...row.feedback_corrected === undefined ? {} : { feedback_corrected: row.feedback_corrected },
+      ...row.last_feedback_at === undefined ? {} : { last_feedback_at: row.last_feedback_at },
     }
   })
 }
@@ -495,6 +516,13 @@ function indexRowOf(record: MemoryRecord) {
     superseded_by: record.superseded_by ?? null,
     ...record.comment === undefined ? {} : { comment: record.comment },
     ...record.derived_from === undefined ? {} : { derived_from: record.derived_from },
+    ...record.access_count === undefined ? {} : { access_count: record.access_count },
+    ...record.last_access_at === undefined ? {} : { last_access_at: record.last_access_at },
+    ...record.stability_days === undefined ? {} : { stability_days: record.stability_days },
+    ...record.ease === undefined ? {} : { ease: record.ease },
+    ...record.feedback_confirmed === undefined ? {} : { feedback_confirmed: record.feedback_confirmed },
+    ...record.feedback_corrected === undefined ? {} : { feedback_corrected: record.feedback_corrected },
+    ...record.last_feedback_at === undefined ? {} : { last_feedback_at: record.last_feedback_at },
   }
 }
 

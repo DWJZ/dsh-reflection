@@ -58,6 +58,20 @@ export interface MemoryRecord {
   comment?: string | undefined
   /** Source records an agent-synthesized record was distilled from. */
   derived_from?: { project_id: string; record_id: string }[] | undefined
+  /** Weighted number of times the record was found. */
+  access_count?: number | undefined
+  /** Last time the record was found, ISO-8601. */
+  last_access_at?: string | undefined
+  /** Decay scale in days; see `priority.ts`. */
+  stability_days?: number | undefined
+  /** SM-2-like ease, grown by confirmed feedback and shrunk by corrections. */
+  ease?: number | undefined
+  /** Confirmed feedback count. */
+  feedback_confirmed?: number | undefined
+  /** Corrected feedback count. */
+  feedback_corrected?: number | undefined
+  /** Last feedback time, ISO-8601. */
+  last_feedback_at?: string | undefined
 }
 
 /** One store file's contents. */

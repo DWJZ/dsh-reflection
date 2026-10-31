@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 `dsh-reflection` gives a Harness agent long-term Memory that survives across Sessions. It stores what the user explicitly asks it to remember, keeps user-wide and project-scoped facts apart, injects a small index of the active facts into every new Session, and exposes the whole store through `/memory`.
 
-A fact enters Memory in one of two ways. The user asks for it, or the plugin learns it: after a Session goes idle and stays idle, the trajectory since the last consolidation is read once, and a model decides what in it is worth keeping. The plugin decides what *may* be stored — it verifies every citation, applies the confidence floor, screens for secrets, and commits through the same path an explicit request takes. Automatic consolidation never deletes anything.
+A fact enters Memory in one of two ways. The user asks for it, or the plugin learns it: after a Session goes idle and stays idle, the trajectory since the last consolidation is read once, and a model decides what in it is worth keeping. The plugin decides what *may* be stored — it verifies every citation, applies the confidence gate for rewrites, screens for secrets, and commits through the same path an explicit request takes. Automatic consolidation never deletes anything.
 
 What automatic learning is not: it does not run while the user is working, it does not read the whole Session again each time, and it does not store anything it cannot point at in the trajectory.
 
@@ -154,7 +154,7 @@ Set fields on the plugin row in the profile's `cordis.patch.yml`:
 | `enabled` | `true` | automatic learning on or off; explicit writes are unaffected |
 | `autoCommit` | `true` | `false` stops automatic learning entirely: no debounce, no model call, no tokens. Events are still collected, so `/memory consolidate` works when you run it; `--dry-run` reports without writing |
 | `debounceMs` | `10000` | how long an idle agent waits before its turn is consolidated |
-| `minConfidence` | `0.8` | serving floor: a lower-confidence add is stored but kept out of the summary/search; a lower-confidence rewrite is dropped |
+| `minConfidence` | `0.8` | rewrite gate: a lower-confidence add is stored (and served); a lower-confidence rewrite is dropped. Confidence also sets a record's initial decay scale |
 | `maxRelevantEventsPerBatch` | `200` | largest window offered to the model |
 | `maxTrajectoryBytesPerBatch` | `65536` | UTF-8 ceiling for the rendered trajectory, minimum 128 |
 | `maxBatchesPerRun` | `4` | how many windows one run may consume; a longer backlog is drained across runs |

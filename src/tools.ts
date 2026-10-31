@@ -15,7 +15,7 @@
  */
 
 import { readStore } from './jsonstore.js'
-import { MemoryNotVisibleError, locateVisible, addMemory, supersedeMemory, updateMemory } from './actions.js'
+import { MemoryNotVisibleError, locateVisible, addMemory, recordAccesses, supersedeMemory, updateMemory } from './actions.js'
 import { searchRecords } from './retrieval.js'
 import type { ProjectEntry } from './types/identity.js'
 import type { Context } from '@deepseek-ai/cordis'
@@ -151,11 +151,19 @@ function searchTool(deps: MemoryDeps) {
         query: args.query,
         scope: args.scope,
         projectId: project?.project_id,
-        minConfidence: deps.config.consolidation.minConfidence,
+        now: Date.now(),
         // Schema validation is the caller's job upstream; clamping here keeps the
         // bound true even when a caller bypasses the declared maximum.
         topK: Math.min(args.top_k ?? deps.config.retrievalTopK, deps.config.retrievalTopK),
       })
+      // Finding counts, but a search hit is weaker than a deliberate read: only
+      // the first three results earn 0.25 of an access.
+      void recordAccesses(scopeOptions(deps, project), found.results.slice(0, 3).map(result => ({
+        id: result.id,
+        scope: result.scope,
+        projectId: result.scope === 'project' ? project?.project_id : null,
+        weight: 0.25,
+      })))
       return { results: found.results.map(stripScore), total: found.total }
     },
     presentCall: (args: Record<string, unknown>) => ({ card: 'generic', title: 'Search memory', kind: 'read', rawInput: args }),
@@ -181,7 +189,14 @@ function getTool(deps: MemoryDeps) {
     execute(args: GetArgs, exec: { agent: MemoryAgent }) {
       const project = deps.projectFor(exec.agent)
       try {
-        const located = locateVisible(scopeOptions(deps, project), args.id, project?.project_id ?? null)
+        const options = scopeOptions(deps, project)
+        const located = locateVisible(options, args.id, project?.project_id ?? null)
+        void recordAccesses(options, [{
+          id: located.record.id,
+          scope: located.record.scope,
+          projectId: located.record.project_id ?? null,
+          weight: 1,
+        }])
         return { found: true, memory: located.record }
       } catch (failure) {
         // Only an invisible id is an answer. A store that cannot be read is a

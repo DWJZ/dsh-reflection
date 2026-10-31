@@ -18,6 +18,7 @@
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { writeAtomic } from './jsonstore.js'
+import { priority } from './priority.js'
 import type { MemoryRecord } from './types/memory.js'
 
 /**
@@ -182,14 +183,15 @@ export function buildSummaryPrompt(input: {
   scopeLabel: string
   projectPath?: string | undefined
   budgetBytes: number
-  /** Records below this confidence are stored but not summarised. */
-  minConfidence?: number | undefined
+  /** Clock for the decay-based priority order. */
+  now?: number | undefined
 }): string {
-  const floor = input.minConfidence ?? 0
+  const now = input.now ?? Date.now()
   const active = input.records
-    .filter((record: MemoryRecord) => record.status === 'active' && record.confidence >= floor)
+    .filter((record: MemoryRecord) => record.status === 'active')
     .slice()
-    .sort((left: MemoryRecord, right: MemoryRecord) => (left.updated_at < right.updated_at ? 1 : left.updated_at > right.updated_at ? -1 : 0))
+    .sort((left: MemoryRecord, right: MemoryRecord) => priority(right, now) - priority(left, now)
+      || (left.updated_at < right.updated_at ? 1 : left.updated_at > right.updated_at ? -1 : 0))
   const header = input.projectPath === undefined
     ? `Scope: ${input.scopeLabel}. ${String(active.length)} active records.`
     : `Scope: ${input.scopeLabel} (${input.projectPath}). ${String(active.length)} active records.`
@@ -198,7 +200,7 @@ export function buildSummaryPrompt(input: {
     '',
     `Keep the whole summary within ${String(input.budgetBytes)} UTF-8 bytes (about ${String(Math.floor(input.budgetBytes / 3))} Chinese characters); anything past that is cut before the agent sees it.`,
     '',
-    'Newest records first:',
+    'Records in serving-priority order (confidence and decay; older may come first):',
     '[explicit] records are direct user instructions or preferences.',
     '[agent] records are distilled experience from automatic summaries and the cross-project digest;',
     'treat them as reference and let an explicit record win on conflict.',

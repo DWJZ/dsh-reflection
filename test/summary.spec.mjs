@@ -114,11 +114,10 @@ check('it carries the injection budget', prompt.includes('1200'))
 check('it counts active records only', prompt.includes('2 active records'))
 check('the newest record comes first', prompt.indexOf('新事实') < prompt.indexOf('旧事实'))
 check('inactive records are absent', !prompt.includes('已归档'))
-check('a low-confidence record is excluded', !buildSummaryPrompt({
+check('a low-confidence record is included', buildSummaryPrompt({
   records: [record({ id: 'mem_low', content: '低置信事实', confidence: 0.5 })],
   scopeLabel: 'user',
   budgetBytes: 1200,
-  minConfidence: 0.8,
 }).includes('低置信事实'))
 check('a long record is truncated', (() => {
   const longPrompt = buildSummaryPrompt({ records: [record({ content: 'x'.repeat(1000) })], scopeLabel: 'user', budgetBytes: 2400 })

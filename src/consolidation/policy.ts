@@ -52,8 +52,13 @@ export const CONSOLIDATION_SYSTEM_PROMPT = [
   'Write each fact so a later Session can reuse it: when the trajectory shows a problem and how it was solved, record the reusable pattern (condition, problem, fix), not the play-by-play.',
   'Evidence must reference seq numbers that appear in the trajectory you were given.',
   '',
+  'You may also return feedback on records that were found in this window.',
+  'Use confirmed only when the trajectory clearly relied on, restated, or verified the record;',
+  'use corrected when the user or the trajectory contradicted it; otherwise neutral.',
+  'Feedback is only allowed for ids listed under "Records found in this window".',
+  '',
   'Answer with one JSON object, and nothing else:',
-  '{"operations":[{"action":"add","scope":"project","title":"The project uses pnpm for dependencies.","content":"The project uses pnpm.","confidence":0.94,"evidence_event_seqs":[190,198]}]}',
+  '{"operations":[{"action":"add","scope":"project","title":"The project uses pnpm for dependencies.","content":"The project uses pnpm.","confidence":0.94,"evidence_event_seqs":[190,198]}],"feedback":[{"target_id":"mem_...","verdict":"confirmed"}]}',
   'confidence is a number in [0,1] reflecting how well the trajectory grounds the fact.',
   '',
   'Every add, update and supersede must include a one-line title:',
@@ -89,6 +94,9 @@ export function buildRequest(request: ConsolidationRequest): string {
     '',
     'Memory that already exists and may be targeted:',
     request.existing.length === 0 ? '(none)' : JSON.stringify(request.existing),
+    '',
+    'Records found in this window (feedback only for these):',
+    request.accessed === undefined || request.accessed.length === 0 ? '(none)' : JSON.stringify(request.accessed),
     '',
     'Decide the operations for this trajectory.',
     ...request.note === undefined ? [] : ['', request.note],
@@ -132,5 +140,8 @@ export function parsePlan(text: string) {
   if (parsed.operations !== undefined && !Array.isArray(parsed.operations)) {
     throw new Error('dsh-reflection: the consolidation plan operations must be an array')
   }
-  return { operations: parsed.operations ?? [] }
+  if (parsed.feedback !== undefined && !Array.isArray(parsed.feedback)) {
+    throw new Error('dsh-reflection: the consolidation plan feedback must be an array')
+  }
+  return { operations: parsed.operations ?? [], feedback: parsed.feedback ?? [] }
 }

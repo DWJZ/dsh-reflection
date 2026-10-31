@@ -29,8 +29,9 @@ import { buildRequest } from './policy.js'
 import { callConsolidator } from './model.js'
 import type { ConsolidationAnswer, ConsolidationUsage } from './model.js'
 import { parsePlan } from './policy.js'
-import { reviewPlan } from './validate.js'
+import { reviewFeedback, reviewPlan } from './validate.js'
 import { commitOperations } from './commit.js'
+import { applyFeedback } from '../actions.js'
 import { advanceHwm, lastProcessedSeq, NO_PROGRESS, progressFor, readState, recordGap, withState } from './state.js'
 import { failureMessage } from '../errors.js'
 import type { ConsolidationRequest } from './model.js'
@@ -142,6 +143,8 @@ export interface SettledAudit {
   committed?: { add: number; update: number; supersede: number } | undefined
   /** Why proposals were refused, by code. */
   rejected_reasons?: Record<string, number> | undefined
+  /** Feedback applied, by verdict, with the affected record ids. */
+  feedback?: { confirmed: string[]; corrected: string[]; neutral: string[] } | undefined
   /** Per-rejection metadata: action, scope, code and proposed content length. */
   rejected_details?: { action?: string | undefined; scope?: string | undefined; code: string; content_length?: number | undefined }[] | undefined
   /** What asked for the run. */
@@ -495,6 +498,8 @@ export function createConsolidation(options: ConsolidationOptions) {
 
       const projectId = options.projectFor(agent)?.project_id ?? null
       const existing = activeMemory(projectId)
+      const referenced = referencedMemoryIds(window.entries)
+      const accessed = existing.filter(record => referenced.has(record.id))
       const request = {
         session,
         sessionId,
@@ -505,6 +510,11 @@ export function createConsolidation(options: ConsolidationOptions) {
           id: record.id,
           scope: record.scope,
           content: record.content,
+        })),
+        accessed: accessed.map(record => ({
+          id: record.id,
+          scope: record.scope,
+          title: record.title,
         })),
         signal: runOptions.signal,
       }
@@ -537,6 +547,7 @@ export function createConsolidation(options: ConsolidationOptions) {
       // The raw answer can quote the conversation, so it is kept only when a person
       // asks for it with a dry run.
       if (runOptions.dryRun === true && runOptions.showRaw === true) extras.model_raw = modelRaw
+      const reviewedFeedback = reviewFeedback(plan.feedback, accessed)
       const reviewed = reviewPlan(plan, {
         fromSeq: cursor + 1,
         toSeq: toSeq,
@@ -582,6 +593,18 @@ export function createConsolidation(options: ConsolidationOptions) {
       }
 
       const outcome = await commitOperations(options.actionOptions, reviewed.accepted)
+      if (reviewedFeedback.accepted.length > 0) {
+        await applyFeedback(options.actionOptions, reviewedFeedback.accepted.map(entry => {
+          const record = accessed.find(candidate => candidate.id === entry.target_id)
+          return {
+            id: entry.target_id,
+            scope: record?.scope ?? 'user',
+            projectId: record?.project_id ?? null,
+            verdict: entry.verdict,
+          }
+        }))
+      }
+      const feedbackAudit = feedbackSummary(reviewedFeedback.accepted)
 
       if (outcome.failures.length > 0) {
         // Something a review accepted could not be written. The mark stays put, so
@@ -601,8 +624,9 @@ export function createConsolidation(options: ConsolidationOptions) {
           },
           rejected: rejectedCount,
           ...rejected,
+          ...feedbackAudit === undefined ? {} : { feedback: feedbackAudit },
         })
-        return { ...auditBase, status: 'partial', committed: outcome.committed, failures: outcome.failures.length }
+        return { ...auditBase, status: 'partial', committed: outcome.committed, failures: outcome.failures.length, ...feedbackAudit === undefined ? {} : { feedback: feedbackAudit } }
       }
 
       await withState(stateOptions, current => ({
@@ -611,10 +635,10 @@ export function createConsolidation(options: ConsolidationOptions) {
       }))
       collector.dropConsumed(sessionId, toSeq)
       const written = { ...operations, ...outcome.committed, skipped: outcome.skipped.length }
-      recordAudit(session, { ...auditBase, status: 'success', operations: written, rejected: rejectedCount, ...rejected })
+      recordAudit(session, { ...auditBase, status: 'success', operations: written, rejected: rejectedCount, ...rejected, ...feedbackAudit === undefined ? {} : { feedback: feedbackAudit } })
       const wrote = written.add + written.update + written.supersede
       logger?.info?.(`dsh-reflection: consolidation of ${sessionId} consumed ${String(auditBase.relevant_events)} event(s) and wrote ${String(wrote)}`)
-      last = { ...auditBase, status: 'success', operations: written, rejected: rejectedCount, ...rejected }
+      last = { ...auditBase, status: 'success', operations: written, rejected: rejectedCount, ...rejected, ...feedbackAudit === undefined ? {} : { feedback: feedbackAudit } }
       totals.relevant += auditBase.relevant_events
       totals.ignored += auditBase.ignored_events
       totals.operations.add += written.add
@@ -760,6 +784,28 @@ function mergeEvents(backfilled: readonly ObservedEvent[], observed: readonly Ob
   for (const event of backfilled) bySeq.set(event.seq, event)
   for (const event of observed) bySeq.set(event.seq, event)
   return [...bySeq.values()].sort((left, right) => left.seq - right.seq)
+}
+
+/**
+ * Record ids mentioned in the window's rendered entries.
+ * @param entries - the bounded trajectory entries.
+ * @returns every Memory id that appears in the text.
+ */
+function referencedMemoryIds(entries: readonly unknown[]): Set<string> {
+  const text = JSON.stringify(entries)
+  return new Set(text.match(/mem_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gu) ?? [])
+}
+
+/**
+ * Group feedback ids by verdict for the audit.
+ * @param accepted - reviewed feedback entries.
+ * @returns the id lists, or undefined when there is none.
+ */
+function feedbackSummary(accepted: readonly { target_id: string; verdict: 'confirmed' | 'corrected' | 'neutral' }[]) {
+  if (accepted.length === 0) return undefined
+  const summary = { confirmed: [] as string[], corrected: [] as string[], neutral: [] as string[] }
+  for (const entry of accepted) summary[entry.verdict].push(entry.target_id)
+  return summary
 }
 
 /**

@@ -338,3 +338,41 @@ function textBlocks(event: ObservedEvent | undefined) {
   if (!Array.isArray(blocks)) return []
   return blocks.filter(block => block?.type === 'text' && typeof block.text === 'string').map(block => block.text)
 }
+
+/** One feedback verdict the review accepted. */
+export interface ReviewedFeedback {
+  target_id: string
+  verdict: 'confirmed' | 'corrected' | 'neutral'
+}
+
+/**
+ * Review the model's feedback on records found in the window.
+ * @param feedback - the raw `feedback` array from the plan.
+ * @param accessed - records referenced in the window, with their ids.
+ * @returns accepted verdicts and rejected entries.
+ */
+export function reviewFeedback(
+  feedback: unknown,
+  accessed: readonly { id: string }[],
+): { accepted: ReviewedFeedback[]; rejected: { reason: string }[] } {
+  if (!Array.isArray(feedback) || feedback.length === 0) return { accepted: [], rejected: [] }
+  const allowed = new Set(accessed.map(record => record.id))
+  const accepted: ReviewedFeedback[] = []
+  const rejected: { reason: string }[] = []
+  const seen = new Set<string>()
+  for (const entry of feedback) {
+    const proposal = asRecord(entry)
+    if (proposal === undefined) { rejected.push({ reason: 'feedback is not an object' }); continue }
+    const targetId = typeof proposal.target_id === 'string' ? proposal.target_id : ''
+    const verdict = proposal.verdict
+    if (targetId === '' || !allowed.has(targetId)) { rejected.push({ reason: 'feedback target was not found in this window' }); continue }
+    if (verdict !== 'confirmed' && verdict !== 'corrected' && verdict !== 'neutral') {
+      rejected.push({ reason: 'unknown feedback verdict' })
+      continue
+    }
+    if (seen.has(targetId)) { rejected.push({ reason: 'duplicate feedback target' }); continue }
+    seen.add(targetId)
+    accepted.push({ target_id: targetId, verdict })
+  }
+  return { accepted, rejected }
+}

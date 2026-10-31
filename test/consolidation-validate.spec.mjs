@@ -262,3 +262,16 @@ check('a plan with no operations key throws', missingRefused === true)
 
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)
 process.exit(failures === 0 ? 0 : 1)
+
+console.log('feedback review')
+{
+  const accessed = [{ id: 'mem_found' }, { id: 'mem_other' }]
+  const accepted = validate.reviewFeedback([
+    { target_id: 'mem_found', verdict: 'confirmed' },
+    { target_id: 'mem_missing', verdict: 'confirmed' },
+    { target_id: 'mem_other', verdict: 'maybe' },
+    { target_id: 'mem_found', verdict: 'corrected' },
+  ], accessed)
+  check('the known target is accepted once', accepted.accepted.length === 1 && accepted.accepted[0].verdict === 'confirmed')
+  check('unknown target, unknown verdict and duplicates are rejected', accepted.rejected.length === 3, JSON.stringify(accepted.rejected))
+}

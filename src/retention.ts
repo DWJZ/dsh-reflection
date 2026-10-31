@@ -28,12 +28,11 @@ export function compareRecords(left: MemoryRecord, right: MemoryRecord): number 
 /**
  * Keep the records ordinary retrieval and injection may see.
  * @param records - every record in one scope.
- * @param minConfidence - records below this confidence are stored but not served.
  * @returns the served records, ordered by {@link compareRecords}.
  */
-export function activeRecords(records: MemoryRecord[], minConfidence = 0) {
+export function activeRecords(records: MemoryRecord[]) {
   return records
-    .filter((record: MemoryRecord) => record.status === 'active' && record.confidence >= minConfidence)
+    .filter((record: MemoryRecord) => record.status === 'active')
     .sort(compareRecords)
 }
 

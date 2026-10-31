@@ -19,6 +19,7 @@ const state = await import(pathToFileURL(join(PLUGIN, 'src/consolidation/state.j
 const { readStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.js')).href)
 const { consolidationLayout, projectLayout, tombstoneLayout, userLayout } = await import(pathToFileURL(join(PLUGIN, 'src/paths.js')).href)
 const { newProjectId } = await import(pathToFileURL(join(PLUGIN, 'src/schema.js')).href)
+const { addMemory } = await import(pathToFileURL(join(PLUGIN, 'src/actions.js')).href)
 const { Session, SessionId, pluginRecordOf } = await import('@deepseek-ai/dsh-session')
 
 let failures = 0
@@ -850,6 +851,37 @@ console.log('a low-confidence add is stored')
   check('the operation is committed', outcome.operations.add === 1 && outcome.rejected === 0, JSON.stringify(outcome))
   const stored = readStore(projectLayout(MEMORY, PROJECT).storePath).records.find(record => record.title === 'A low-confidence fact.')
   check('the stored record keeps its confidence', stored?.confidence === 0.5, JSON.stringify(stored?.confidence))
+}
+
+console.log('feedback adjusts decay metadata')
+{
+  const options = {
+    scopes: { user: userLayout(MEMORY), project: id => projectLayout(MEMORY, id) },
+    tombstones: tombstoneLayout(MEMORY),
+    lockTimeoutMs: 3000,
+    staleLockMs: 60000,
+    maxEvidencePerMemory: 8,
+    logger: { warn: () => {} },
+  }
+  const seeded = await addMemory(options, {
+    content: 'Feedback fact.',
+    title: 'Feedback fact.',
+    scope: 'project',
+    projectId: PROJECT,
+    confidence: 0.8,
+  })
+  const before = readStore(projectLayout(MEMORY, PROJECT).storePath).records.find(record => record.id === seeded.id)
+  const harnessed = harness({
+    sessionId: 'session_feedback',
+    modelAnswer: JSON.stringify({ operations: [], feedback: [{ target_id: seeded.id, verdict: 'confirmed' }] }),
+  })
+  observe(harnessed, [human(1, '继续'), toolResult(2, `memory_get ${seeded.id}`)])
+  const outcome = await harnessed.consolidation.consolidate(harnessed.agent)
+  check('the feedback id reaches the audit', outcome.feedback?.confirmed?.[0] === seeded.id, JSON.stringify(outcome.feedback))
+  const after = readStore(projectLayout(MEMORY, PROJECT).storePath).records.find(record => record.id === seeded.id)
+  check('confirmed feedback grows stability', after.stability_days > before.stability_days, `${String(before.stability_days)} -> ${String(after.stability_days)}`)
+  check('confirmed feedback keeps ease at the cap', after.ease === 2.5 && after.ease >= before.ease, `${String(before.ease)} -> ${String(after.ease)}`)
+  check('confirmed feedback increments its count', after.feedback_confirmed === 1, String(after.feedback_confirmed))
 }
 
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)
