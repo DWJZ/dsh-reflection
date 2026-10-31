@@ -24,7 +24,8 @@ const DAY_MS = 86_400_000
  * @returns days, clamped to {@link MIN_STABILITY_DAYS}..{@link MAX_STABILITY_DAYS}.
  */
 export function initialStability(confidence: number): number {
-  const value = 3 * Math.pow(60, Math.max(0, Math.min(1, confidence)))
+  const safe = Number.isFinite(confidence) ? confidence : 1
+  const value = 3 * Math.pow(60, Math.max(0, Math.min(1, safe)))
   return Math.min(MAX_STABILITY_DAYS, Math.max(MIN_STABILITY_DAYS, value))
 }
 
@@ -67,7 +68,8 @@ export function retrievability(record: MemoryRecord, nowMs: number): number {
  * @returns a positive priority; higher means more prominent.
  */
 export function priority(record: MemoryRecord, nowMs: number): number {
-  return record.confidence * (0.4 + 0.6 * retrievability(record, nowMs))
+  const confidence = Number.isFinite(record.confidence) ? record.confidence : 1
+  return confidence * (0.4 + 0.6 * retrievability(record, nowMs))
 }
 
 /**

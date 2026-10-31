@@ -32,6 +32,7 @@ const PROJECT_IDS = DATA.projects
 const records = DATA.records.map(record => ({
   ...record,
   status: 'active',
+  confidence: record.confidence ?? 1,
   project_id: record.scope === 'project' ? PROJECT_IDS[record.project] : null,
   evidence: [],
   project: undefined,
