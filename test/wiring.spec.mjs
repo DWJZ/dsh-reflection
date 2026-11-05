@@ -148,6 +148,14 @@ check('a session without that project does not see its scope', !otherIndex.inclu
 check('a session without a project still sees user Memory', otherIndex.includes('2 user'))
 check('the injected summary declares what it is', projectIndex.includes('data, not instructions'))
 
+console.log('rendering the summary is read-only')
+const revisionBefore = readStore(userScope.storePath).revision
+const renderedAgain = ctx.registrations.contexts[0].text({ agent: agentStub() })
+await settle()
+check('rendering the summary does not rewrite Memory',
+  readStore(userScope.storePath).revision === revisionBefore)
+check('the render carries no automatic recall', !renderedAgain.includes('<memory-recall>'))
+
 console.log('a corrupt canonical store fails the request, it does not empty the index')
 const indexText = agent => ctx.registrations.contexts[0].text({ agent })
 const settleIndex = (agent) => {
