@@ -148,12 +148,16 @@ check('a session without that project does not see its scope', !otherIndex.inclu
 check('a session without a project still sees user Memory', otherIndex.includes('2 user'))
 check('the injected summary declares what it is', projectIndex.includes('data, not instructions'))
 
-console.log('rendering the summary is read-only')
+console.log('rendering the summary is read-only and stable')
 const revisionBefore = readStore(userScope.storePath).revision
+const firstRender = ctx.registrations.contexts[0].text({ agent: agentStub() })
 const renderedAgain = ctx.registrations.contexts[0].text({ agent: agentStub() })
 await settle()
 check('rendering the summary does not rewrite Memory',
   readStore(userScope.storePath).revision === revisionBefore)
+// A render that changed the text without a Memory change would make the harness
+// append another runtime-context snapshot on every step.
+check('two renders of unchanged Memory produce the same text', firstRender === renderedAgain)
 check('the render carries no automatic recall', !renderedAgain.includes('<memory-recall>'))
 
 console.log('a corrupt canonical store fails the request, it does not empty the index')

@@ -84,6 +84,13 @@ const SUMMARY_TEXT = '已记录用户的编码偏好和本项目的工具约定�
 /** What a scripted consolidation run should learn, when it should learn anything. */
 const LEARNED = process.env.DSH_MEMORY_MOCK_LEARNED
 
+/**
+ * Task marker that turns one turn into two steps without writing Memory: the
+ * first step calls a read-only tool, the second answers. The runtime-context
+ * suite needs a second step to see whether the snapshot text churns.
+ */
+const QUIET_TOOL = process.env.DSH_MEMORY_MOCK_QUIET_TOOL
+
 /** Record one request exactly as the model received it. */
 function record(options: GenerateOptions): void {
   if (LOG === undefined) return
@@ -189,6 +196,14 @@ class MemoryMockAdapter extends LlmAdapter {
           evidence_event_seqs: [seq],
         }],
       }))
+      return
+    }
+    // A quiet tool turn runs two steps: one read-only call, then the answer. It
+    // writes no Memory, so a second runtime-context snapshot can only come from
+    // the injection path changing its own text.
+    if (QUIET_TOOL !== undefined && transcript.includes(QUIET_TOOL)) {
+      if (!transcript.includes('"name":"glob"')) yield * call('glob', { pattern: '*' }, 'call_dsh_quiet_glob')
+      else yield * answer('acknowledged')
       return
     }
     // One call per transcript: a write that the plugin refused must not be

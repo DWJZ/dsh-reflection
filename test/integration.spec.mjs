@@ -129,6 +129,11 @@ async function runSession(options) {
     ...options.supersede === true ? { DSH_MEMORY_MOCK_SUPERSEDE: '1' } : {},
     ...options.query === undefined ? {} : { DSH_MEMORY_MOCK_QUERY: options.query },
     ...options.learned === undefined ? {} : { DSH_MEMORY_MOCK_LEARNED: options.learned },
+    // The default trigger ("记住") also matches the Memory policy text, so every
+    // turn would write Memory. A caller that wants a plain answer turn overrides
+    // it with a token this prompt cannot contain.
+    ...options.trigger === undefined ? {} : { DSH_MEMORY_MOCK_TRIGGER: options.trigger },
+    ...options.quietTool === undefined ? {} : { DSH_MEMORY_MOCK_QUIET_TOOL: options.quietTool },
     ...options.drive !== true ? {} : { DSH_MEMORY_DRIVER_LOG: `${log}.driver` },
     ...options.drive !== true ? {} : { DSH_MEMORY_RECORD_LOG: `${log}.records` },
     ...options.compactDrive !== true ? {} : { DSH_MEMORY_COMPACT_LOG: `${log}.compact` },
@@ -238,6 +243,47 @@ function projectIdFor(project) {
   const registry = readRegistry(registryLayout(join(HOME, 'memory')).registryPath)
   const real = realpathSync(project)
   return registry.projects.find(entry => entry.canonical_root === real)?.project_id
+}
+
+/**
+ * The persisted Session recorded for one working directory.
+ *
+ * The headless profile writes `session.v4.jsonl.zstd` per Session, so a later
+ * `--session-id` run can adopt it. The header carries the resolved directory,
+ * which is what ties the log to this suite's fixture project.
+ * @param cwd - the directory the Session ran in.
+ * @returns the Session id, or undefined when no stored log names that directory.
+ */
+function sessionIdFor(cwd) {
+  const sessionsRoot = join(HOME, 'sessions')
+  if (!existsSync(sessionsRoot)) return undefined
+  const wanted = realpathSync(cwd)
+  for (const group of readdirSync(sessionsRoot)) {
+    const groupPath = join(sessionsRoot, group)
+    for (const id of readdirSync(groupPath)) {
+      const logPath = join(groupPath, id, 'session.v4.jsonl.zstd')
+      if (!existsSync(logPath)) continue
+      const [line] = zstdDecompressSync(readFileSync(logPath)).toString('utf8').split('\n')
+      try {
+        const header = JSON.parse(line)
+        if (header.type === 'session' && realpathSync(header.cwd) === wanted) return id
+      } catch {
+        // Another writer's file in the same directory is not a Session header.
+      }
+    }
+  }
+  return undefined
+}
+
+/**
+ * How many runtime-context snapshots one recorded request carries.
+ * @param log - the recorded request log.
+ * @returns the number of snapshot messages in the last main-agent request.
+ */
+function snapshotCount(log) {
+  const last = mainRequests(log).at(-1)
+  return (last?.messages ?? [])
+    .filter(message => JSON.stringify(message?.content ?? '').includes('Current runtime context. This snapshot supersedes earlier runtime-context snapshots.')).length
 }
 
 /**
@@ -435,6 +481,34 @@ check('the later Session runs', projectCSession.code === 0, projectCSession.stde
 const projectCRequest = requestText(projectCSession.log)
 check('the request carries a summary envelope', projectCRequest.includes('<memory-summary>'))
 check('the summary never inlines the retired fact', !projectCRequest.includes('该项目使用 npm'))
+
+console.log('a resumed Session is sent one runtime-context snapshot')
+// The snapshot text must not change between turns. A per-turn or per-step change
+// makes the harness append another ~3 KB snapshot on every request, which is what
+// an injected recall block and an access write during assembly used to cause.
+const QUIET_PROJECT = projectDir('quiet-project')
+const QUIET_TOKEN = 'DSH_QUIET_TOOL_TURN'
+const quietTurn = await runSession({
+  project: QUIET_PROJECT,
+  task: `只回答 acknowledged，不要中文解释 ${QUIET_TOKEN}`,
+  trigger: 'DSH_DISABLE_MEMORY_WRITE',
+  quietTool: QUIET_TOKEN,
+})
+check('the quiet turn runs', quietTurn.code === 0, quietTurn.stderr.slice(0, 400))
+check('the first turn is sent one runtime-context snapshot',
+  snapshotCount(quietTurn.log) === 1, String(snapshotCount(quietTurn.log)))
+const quietSession = sessionIdFor(QUIET_PROJECT)
+check('the quiet Session was persisted', typeof quietSession === 'string', String(quietSession))
+const resumedTurn = await runSession({
+  project: QUIET_PROJECT,
+  task: `再回答一次 acknowledged，同样不要中文解释 ${QUIET_TOKEN}`,
+  trigger: 'DSH_DISABLE_MEMORY_WRITE',
+  quietTool: QUIET_TOKEN,
+  ...quietSession === undefined ? {} : { sessionId: quietSession },
+})
+check('the resumed turn runs', resumedTurn.code === 0, resumedTurn.stderr.slice(0, 400))
+check('the resumed turn is still sent one snapshot',
+  snapshotCount(resumedTurn.log) === 1, String(snapshotCount(resumedTurn.log)))
 
 console.log('Memory survives a compaction')
 // `/compact` reduces the stored history through the harness's own entry point. A later
