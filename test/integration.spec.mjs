@@ -28,6 +28,7 @@ const CLI = process.env.DSH_CLI ?? join(REPO, 'apps/cli/src/bin.ts')
 const { readRegistry } = await import(pathToFileURL(join(PLUGIN, 'src/registry.js')).href)
 const { readStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.js')).href)
 const { projectLayout, registryLayout } = await import(pathToFileURL(join(PLUGIN, 'src/paths.js')).href)
+const { readSummaryDocument } = await import(pathToFileURL(join(PLUGIN, 'src/summary.js')).href)
 
 let failures = 0
 const check = (name, condition, detail = '') => {
@@ -134,6 +135,7 @@ async function runSession(options) {
     // it with a token this prompt cannot contain.
     ...options.trigger === undefined ? {} : { DSH_MEMORY_MOCK_TRIGGER: options.trigger },
     ...options.quietTool === undefined ? {} : { DSH_MEMORY_MOCK_QUIET_TOOL: options.quietTool },
+    ...options.followup === undefined ? {} : { DSH_MEMORY_FOLLOWUP_TASK: options.followup },
     ...options.drive !== true ? {} : { DSH_MEMORY_DRIVER_LOG: `${log}.driver` },
     ...options.drive !== true ? {} : { DSH_MEMORY_RECORD_LOG: `${log}.records` },
     ...options.compactDrive !== true ? {} : { DSH_MEMORY_COMPACT_LOG: `${log}.compact` },
@@ -344,7 +346,8 @@ check('the summary does not inline the remembered fact', !summaryTextOf(projectA
 const projectAIdForSummary = projectIdFor(PROJECT_A)
 check('the summary points at the project index file', projectAIdForSummary !== undefined
   && projectARequest.includes(`projects/${projectAIdForSummary}/memories.json`))
-check('the summary carries the model-written text', projectARequest.includes('已记录用户的编码偏好'))
+check('the summary carries the model-written text',
+  projectARequest.includes('已记录') && projectARequest.includes('条记录（'))
 
 console.log('27.5 a driven consolidation learns from a finished turn')
 const CONSOLIDATION_PROJECT = join(ROOT, 'consolidation-project')
@@ -510,6 +513,44 @@ check('the resumed turn runs', resumedTurn.code === 0, resumedTurn.stderr.slice(
 check('the resumed turn is still sent one snapshot',
   snapshotCount(resumedTurn.log) === 1, String(snapshotCount(resumedTurn.log)))
 
+console.log('a consolidation adds no runtime-context snapshot')
+// The block is frozen for the Session: a consolidation that writes a record and
+// rewrites the summary must not change what this conversation was sent.
+const FROZEN_PROJECT = projectDir('frozen-context-project')
+const FROZEN_FACT = '这个项目用 pnpm 管理依赖'
+const SNAPSHOT_PREFIX = 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.'
+const frozenRun = await runSession({
+  project: FROZEN_PROJECT,
+  task: '只回答 acknowledged',
+  trigger: 'DSH_DISABLE_MEMORY_WRITE',
+  learned: FROZEN_FACT,
+  drive: true,
+  followup: '再回答一次 acknowledged',
+})
+check('the consolidation run succeeds', frozenRun.code === 0, frozenRun.stderr.slice(0, 400))
+const frozenSteps = existsSync(`${frozenRun.log}.driver`) ? readFileSync(`${frozenRun.log}.driver`, 'utf8') : ''
+check('the consolidation ran', frozenSteps.includes('handled:success') && frozenSteps.includes('followup'),
+  frozenSteps.replace(/\n/gu, ' | '))
+const frozenProjectId = projectIdFor(FROZEN_PROJECT)
+check('the consolidation stored the learned record',
+  frozenProjectId !== undefined && recordsOf(frozenProjectId).some(record => record.content === FROZEN_FACT))
+const frozenRequests = mainRequests(frozenRun.log)
+check('the follow-up turn ran', frozenRequests.length >= 2, String(frozenRequests.length))
+const frozenBlocks = frozenRequests.map(request => summaryTextOf(JSON.stringify(request.messages)))
+check('every request carries the same summary text',
+  frozenBlocks[0] !== '' && new Set(frozenBlocks).size === 1, JSON.stringify(frozenBlocks.map(block => block.slice(0, 60))))
+const frozenLast = frozenRequests.at(-1)
+const frozenSnapshots = (frozenLast?.messages ?? [])
+  .filter(message => JSON.stringify(message?.content ?? '').includes(SNAPSHOT_PREFIX))
+check('the follow-up request carries one runtime-context snapshot',
+  frozenSnapshots.length === 1, String(frozenSnapshots.length))
+const storedSummary = frozenProjectId === undefined
+  ? undefined
+  : readSummaryDocument(projectLayout(join(HOME, 'memory'), frozenProjectId).summaryPath)
+check('the stored summary changed after the consolidation', storedSummary !== undefined)
+check('the rewritten summary never reached the conversation',
+  storedSummary !== undefined && !JSON.stringify(frozenLast?.messages ?? '').includes(storedSummary.content))
+
 console.log('Memory survives a compaction')
 // `/compact` reduces the stored history through the harness's own entry point. A later
 // run adopts that same Session, so its request is assembled from the reduced surface:
@@ -543,7 +584,7 @@ check('the bulky turn is gone from the reduced history', !reducedRequest.include
 check('the summary envelope is still assembled after the compaction',
   reducedRequest.includes('<memory-summary>'))
 check('the summary still reaches the reduced request',
-  reducedRequest.includes('已记录用户的编码偏好'), reducedRequest.slice(-300))
+  reducedRequest.includes('条记录（'), reducedRequest.slice(-300))
 
 rmSync(ROOT, { recursive: true, force: true })
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)

@@ -151,6 +151,26 @@ check('a budget mismatch is stale', summaryIsStale(fresh, 3, 1200) === true)
 check('a cache without a budget is stale', summaryIsStale({ content: 'a summary', revision: 3, generated_at: AT }, 3, 2400) === true)
 check('empty content is stale', summaryIsStale({ ...fresh, content: '  ' }, 3, 2400) === true)
 
+console.log('records below the confidence floor are not described')
+const thresholds = buildSummaryPrompt({
+  records: [
+    record({ id: 'mem_high', title: '高置信', content: '高置信事实', confidence: 0.9 }),
+    record({ id: 'mem_low', title: '低置信', content: '低置信事实', confidence: 0.3 }),
+  ],
+  scopeLabel: 'user',
+  budgetBytes: 1200,
+  minConfidence: 0.5,
+})
+check('the high-confidence record is described', thresholds.includes('高置信事实'))
+check('the low-confidence record is not', !thresholds.includes('低置信事实'))
+check('the prompt counts only the described records', thresholds.includes('1 active records'))
+check('the signature ignores below-threshold records',
+  recordsSignature([record({ id: 'mem_high', confidence: 0.9 })], 0.5)
+  === recordsSignature([
+    record({ id: 'mem_high', confidence: 0.9 }),
+    record({ id: 'mem_low', confidence: 0.3 }),
+  ], 0.5))
+
 console.log('the previous summary travels with the prompt')
 const withPrevious = buildSummaryPrompt({
   records: [record({ content: '用户偏好中文解释' })],

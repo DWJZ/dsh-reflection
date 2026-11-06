@@ -48,6 +48,8 @@ export interface MemorySettings {
   memoryDir: string
   /** Largest injected Memory summary, in UTF-8 bytes. */
   summaryBudgetBytes: number
+  /** Lowest record confidence the summary describes and reacts to; lower records are ignored. */
+  summaryMinConfidence: number
   /** How many records a search returns. */
   retrievalTopK: number
   /** Markers that identify a project root, kept in step with the harness. */

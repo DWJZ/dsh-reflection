@@ -65,6 +65,7 @@ async function scene(chunks) {
     }),
     logger: { warn: message => warnings.push(String(message)), debug: message => debugs.push(String(message)) },
     summaryBudgetBytes: 2400,
+    summaryMinConfidence: 0.5,
     now: () => Date.parse('2026-10-29T00:00:00.000Z'),
   })
   return { root, layout, seen, warnings, debugs, service }
@@ -126,6 +127,7 @@ console.log('a different budget makes the cache stale')
     }),
     logger: { warn: () => {}, debug: () => {} },
     summaryBudgetBytes: budget,
+    summaryMinConfidence: 0.5,
     now: () => Date.parse('2026-10-29T00:00:00.000Z'),
   })
   await makeService(2400).refresh(agent)
@@ -164,6 +166,7 @@ console.log('a summary over the content budget is regenerated')
     }),
     logger: { warn: message => warnings.push(String(message)), debug: () => {} },
     summaryBudgetBytes: 800,
+    summaryMinConfidence: 0.5,
     now: () => Date.parse('2026-10-29T00:00:00.000Z'),
   })
   await service.refresh(agent)
@@ -201,6 +204,7 @@ console.log('a summary that never fits is truncated and warned')
     }),
     logger: { warn: message => warnings.push(String(message)), debug: () => {} },
     summaryBudgetBytes: 800,
+    summaryMinConfidence: 0.5,
     now: () => Date.parse('2026-10-29T00:00:00.000Z'),
   })
   await service.refresh(agent)
@@ -236,6 +240,29 @@ console.log('an access-only revision keeps the cached text')
   check('no model call is made for an access-only revision', seen.length === 1, String(seen.length))
   check('the cached text is byte for byte the same', second.content === first.content)
   check('the cached revision moved', second.revision > first.revision, String(first.revision) + ' -> ' + String(second.revision))
+  rmSync(root, { recursive: true, force: true })
+}
+
+console.log('a below-threshold add does not invalidate the summary')
+{
+  const { root, layout, seen, service } = await scene([
+    { type: 'text-delta', index: 0, text: 'the trusted summary' },
+    { type: 'finish', reason: { kind: 'stop' } },
+  ])
+  await service.refresh(agent)
+  const first = JSON.parse(readFileSync(layout.summaryPath, 'utf8'))
+  check('the first refresh writes a summary', seen.length === 1 && first.content === 'the trusted summary')
+  // A consolidation add below the floor is stored but must not describe itself in
+  // the summary, so the injected text does not change for it.
+  await withStore({ storePath: layout.storePath, lockPath: layout.lockPath, recordsDir: layout.recordsDir, lockTimeoutMs: 2000, staleLockMs: 60000 }, current => ({
+    changed: true,
+    records: [...current.records, memoryRecord({ title: 'a low add', content: 'a low fact', confidence: 0.2 })],
+  }))
+  await service.refresh(agent)
+  const second = JSON.parse(readFileSync(layout.summaryPath, 'utf8'))
+  check('no model call for a below-threshold add', seen.length === 1, String(seen.length))
+  check('the cached text is unchanged', second.content === first.content)
+  check('the cached revision moved', second.revision > first.revision)
   rmSync(root, { recursive: true, force: true })
 }
 

@@ -78,9 +78,6 @@ const CONSOLIDATION_MARKER = 'You maintain long-term Memory'
 /** Marker that identifies the summary call's system prompt. */
 const SUMMARY_MARKER = 'You write a compact summary of a long-term Memory store'
 
-/** What a scripted summary call answers. Deliberately free of any stored fact. */
-const SUMMARY_TEXT = '已记录用户的编码偏好和本项目的工具约定。'
-
 /** What a scripted consolidation run should learn, when it should learn anything. */
 const LEARNED = process.env.DSH_MEMORY_MOCK_LEARNED
 
@@ -171,7 +168,12 @@ class MemoryMockAdapter extends LlmAdapter {
     // The summary call is neither a turn nor a plan: it asks for a description of
     // what Memory holds, and its answer is cached beside the records.
     if ((options.system ?? '').includes(SUMMARY_MARKER)) {
-      yield * answer(SUMMARY_TEXT)
+      // The answer names how many records the prompt described, so a consolidation
+      // that changed the described set changes this text.
+      const prompt = String(options.messages?.[0]?.content?.[0]?.text ?? '')
+      const described = Number(/(\d+) active records/u.exec(prompt)?.[1] ?? 0)
+      const scope = /^Scope: ([a-z]+)/mu.exec(prompt)?.[1] ?? 'user'
+      yield * answer(`已记录 ${String(described)} 条记录（${scope}）。`)
       return
     }
     // Automatic consolidation is a different kind of call: it carries the memory

@@ -41,6 +41,8 @@ export interface SummaryServiceOptions {
   logger?: { warn(message: string | Error): void; debug?(message: string): void } | undefined
   /** Injection budget the summary is written for. */
   summaryBudgetBytes: number
+  /** Lowest record confidence the summary describes; lower records never invalidate it. */
+  summaryMinConfidence: number
   /** Injectable clock, in epoch milliseconds. */
   now?(): number
 }
@@ -75,13 +77,13 @@ export function createSummaryService(options: SummaryServiceOptions) {
     const llm = options.llmScope()
     if (llm === undefined) return
     const store = readStore(layout.storePath)
-    if (!store.records.some((record: MemoryRecord) => record.status === 'active')) return
+    if (!store.records.some((record: MemoryRecord) => record.status === 'active' && record.confidence >= options.summaryMinConfidence)) return
     const cached = readSummaryDocument(layout.summaryPath)
     if (!summaryIsStale(cached, store.revision, options.summaryBudgetBytes)) return
     // A revision bump can come from access statistics alone. When the active
     // records are byte for byte the ones the cached text describes, keep that text:
     // rewriting it would change the runtime context the agent is sent for no reason.
-    const signature = recordsSignature(store.records)
+    const signature = recordsSignature(store.records, options.summaryMinConfidence)
     if (cached !== undefined
       && cached.signature === signature
       && cached.budget === options.summaryBudgetBytes) {
@@ -104,6 +106,7 @@ export function createSummaryService(options: SummaryServiceOptions) {
       scopeLabel,
       ...projectPath === undefined ? {} : { projectPath },
       budgetBytes: contentBudget,
+      minConfidence: options.summaryMinConfidence,
       ...cached?.content === undefined ? {} : { previous: cached.content },
       now: options.now?.() ?? Date.now(),
     })

@@ -190,6 +190,7 @@ export function writeSummaryDocument(path: string, entry: CachedSummary): void {
  * @param input.projectPath - the project root, when the scope is a project.
  * @param input.budgetBytes - the injection budget the summary must fit.
  * @param input.previous - the summary already cached, when one exists.
+ * @param input.minConfidence - lowest confidence a described record may have.
  * @returns the user message.
  */
 export function buildSummaryPrompt(input: {
@@ -199,12 +200,15 @@ export function buildSummaryPrompt(input: {
   budgetBytes: number
   /** Summary already cached for this scope; a call with nothing new returns it as-is. */
   previous?: string | undefined
+  /** Lowest confidence a record may have to be described; older reviews may propose less. */
+  minConfidence?: number | undefined
   /** Clock for the decay-based priority order. */
   now?: number | undefined
 }): string {
   const now = input.now ?? Date.now()
+  const minConfidence = input.minConfidence ?? 0
   const active = input.records
-    .filter((record: MemoryRecord) => record.status === 'active')
+    .filter((record: MemoryRecord) => record.status === 'active' && record.confidence >= minConfidence)
     .slice()
     .sort((left: MemoryRecord, right: MemoryRecord) => priority(right, now) - priority(left, now)
       || (left.updated_at < right.updated_at ? 1 : left.updated_at > right.updated_at ? -1 : 0))
@@ -296,11 +300,12 @@ export function renderMemorySummary(input: {
  * statistics can be absorbed without asking a model: the text stays byte for
  * byte, and so does the runtime context built from it.
  * @param records - every record in the scope, including inactive ones.
- * @returns a stable signature of the active records' titles and content.
+ * @param minConfidence - lowest confidence a record may have to be described; the default counts every active record.
+ * @returns a stable signature of the described records' titles and content.
  */
-export function recordsSignature(records: readonly MemoryRecord[]): string {
+export function recordsSignature(records: readonly MemoryRecord[], minConfidence = 0): string {
   const rows = records
-    .filter(record => record.status === 'active')
+    .filter(record => record.status === 'active' && record.confidence >= minConfidence)
     .map(record => `${record.id}\u0000${record.title}\u0000${createHash('sha1').update(record.content).digest('hex')}`)
     .sort()
   return createHash('sha1').update(rows.join('\n')).digest('hex')

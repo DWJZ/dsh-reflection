@@ -22,6 +22,7 @@ export const DEFAULTS = Object.freeze({
   enabled: true,
   dshHome: '',
   summaryBudgetBytes: 2400,
+  summaryMinConfidence: 0.5,
   retrievalTopK: 8,
   // The same list `@deepseek-ai/dsh-agent-instructions` resolves a project root
   // with. A local plugin cannot read that resolved config, so the two are kept in
@@ -72,6 +73,7 @@ export function resolveConfig(
     dshHome,
     memoryDir: resolveMemoryDir(dshHome),
     summaryBudgetBytes: integerSetting(raw.summaryBudgetBytes, DEFAULTS.summaryBudgetBytes, 'summaryBudgetBytes', 0),
+    summaryMinConfidence: confidenceSetting(raw.summaryMinConfidence, DEFAULTS.summaryMinConfidence, 'summaryMinConfidence'),
     retrievalTopK: integerSetting(raw.retrievalTopK, DEFAULTS.retrievalTopK, 'retrievalTopK', 1),
     projectRootMarkers: markersSetting(raw.projectRootMarkers),
     lockTimeoutMs: integerSetting(raw.lockTimeoutMs, DEFAULTS.lockTimeoutMs, 'lockTimeoutMs', 1),
@@ -139,6 +141,21 @@ function consolidationSetting(value: unknown): MemoryConsolidationSettings {
  * @param minimum - smallest accepted value.
  * @returns the validated integer.
  */
+/**
+ * Read one probability setting.
+ * @param value - the raw value.
+ * @param fallback - the default.
+ * @param field - the field name, for the failure message.
+ * @returns the value, in [0, 1].
+ */
+function confidenceSetting(value: unknown, fallback: number, field: string): number {
+  if (value === undefined) return fallback
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new TypeError(`dsh-reflection: config ${field} must be a number in [0, 1], got ${JSON.stringify(value)}`)
+  }
+  return value
+}
+
 function integerSetting(value: unknown, fallback: number, field: string, minimum: number): number {
   if (value === undefined) return fallback
   if (typeof value !== 'number' || !Number.isInteger(value) || value < minimum) {
