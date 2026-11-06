@@ -907,7 +907,7 @@ mark = 已消费到的 seq，不是可从存储重读的光标。
 ```
 
 - **正常情形**（插件在该 Session 产生事件前已挂载）：投影覆盖全部新事件，mark 精确推进。
-- **间断情形**（Session resume、插件晚挂载、进程重启、缓冲被上限截断）：投影看不到那一段。**先向 harness 的 `sessionQuery` 要这段历史**（`readEvent` 窗口，按 seq 范围；单次区间上限 2000 事件，超过则仍记 gap）；能**完整**读回时把它折进本批，不记 gap。读不回（服务未挂载、区间被清理、读取失败，或只返回部分）时不得伪造，也不得假装读过：把这段区间记为一次 **gap**（`from_seq` / `to_seq` / `at`），mark 跳过它。gap 必须落在 `consolidation-state.json` 里，并计入审计，使"没看见"与"看了但没有值得记的"可区分。
+- **间断情形**（Session resume、插件晚挂载、进程重启、缓冲被上限截断）：投影看不到那一段。**先向 harness 的 `sessionQuery` 要这段历史**（`readEvent` 窗口，按 seq 范围；每次读取按服务自己的窗口上限分页，默认 50 条，服务拒绝更大窗口时减半重试；单次区间上限 2000 事件，超过则仍记 gap）；能**完整**读回时把它折进本批，不记 gap。读不回（服务未挂载、区间被清理、读取失败，或只返回部分）时不得伪造，也不得假装读过：把这段区间记为一次 **gap**（`from_seq` / `to_seq` / `at`），mark 跳过它。gap 必须落在 `consolidation-state.json` 里，并计入审计，使"没看见"与"看了但没有值得记的"可区分。
 - 从未观测过的 Session（无 mark 且无事件）报 `nothing-observed`；已消费完的 Session 报 `nothing-pending`。两者不同，不得合并。
 
 ## P2-2. 进度文件

@@ -102,6 +102,54 @@ console.log('a degenerate range asks nothing')
   check('and no model or storage call is made', called === 0)
 }
 
+/**
+ * A session-query stand-in that enforces the harness window cap.
+ * @param maxBefore - largest accepted `before`, as the service's readWindowMax.
+ * @returns the service and the requests it accepted.
+ */
+const cappedService = (maxBefore) => {
+  const requests = []
+  return {
+    requests,
+    async readEvent({ sessionId, seq, before = 0, after = 0 }) {
+      if (before > maxBefore) {
+        throw Object.assign(new Error(`before must be an integer between 0 and ${String(maxBefore)}`), {
+          code: 'SESSION_QUERY_INVALID_WINDOW',
+        })
+      }
+      requests.push({ sessionId, seq, before, after })
+      const events = []
+      for (let one = seq - before; one <= seq + after; one += 1) events.push(raw(one))
+      return { events }
+    },
+  }
+}
+
+console.log('a hole larger than the window is paged')
+{
+  // The service rejects a window above its cap (the harness default is 50), so a
+  // single oversized request used to make a readable hole a recorded gap.
+  const service = cappedService(50)
+  const events = await createHistoryReader(contextWith(service)).read('session_a', 1, 120)
+  check('a long hole is backfilled whole', events?.length === 120, String(events?.length))
+  check('every request stays inside the window cap',
+    service.requests.every(request => request.before <= 50), JSON.stringify(service.requests.map(request => request.before)))
+  check('the pages cover the range in order',
+    service.requests.length > 1
+      && service.requests[0]?.seq === 50
+      && service.requests.at(-1)?.seq === 120,
+    JSON.stringify(service.requests.map(request => request.seq)))
+}
+
+console.log('a deployment with a smaller window still backfills')
+{
+  const service = cappedService(10)
+  const events = await createHistoryReader(contextWith(service)).read('session_a', 1, 60)
+  check('the read still completes', events?.length === 60, String(events?.length))
+  check('every request fits the smaller cap',
+    service.requests.every(request => request.before <= 10), JSON.stringify(service.requests.map(request => request.before)))
+}
+
 if (failures > 0) {
   console.log(`\n${String(failures)} FAILURE(S)`)
   process.exitCode = 1

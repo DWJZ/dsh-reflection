@@ -9,7 +9,9 @@
  *
  * The service is optional. A profile without it keeps the old behavior, where an
  * unreadable range is recorded as a gap; a failed read is treated the same way.
- * A range over {@link MAX_BACKFILL_EVENTS} is requested in chunks by the caller.
+ * A range over {@link MAX_BACKFILL_EVENTS} is requested in chunks by the caller,
+ * and each chunk is paged to the service's window cap rather than sent as one
+ * oversized request.
  *
  * @module dsh-reflection/history
  */
@@ -57,6 +59,66 @@ interface RawEvent {
   ignorable?: unknown
 }
 
+/** The one read call this reader makes, once the service is known to have it. */
+type ReadEvent = NonNullable<SessionQueryService["readEvent"]>
+
+/**
+ * Largest number of events one `readEvent` call requests.
+ *
+ * The harness caps that window (`readWindowMax`, 50 by default) and rejects a
+ * larger request, which would otherwise turn a readable hole into a gap. Reads
+ * above this size are paged; a deployment that caps the window lower makes the
+ * reader halve its page and retry.
+ */
+export const READ_WINDOW_EVENTS = 50
+
+/**
+ * Read one page and validate that it covers exactly the requested range.
+ * @param readEvent - the harness session-query read call.
+ * @param sessionId - the Session to read.
+ * @param fromSeq - first seq wanted, inclusive.
+ * @param toSeq - last seq wanted, inclusive.
+ * @returns the page in ascending order, or undefined when the answer is partial.
+ * @throws when the service rejects the request; the caller retries with a smaller page.
+ */
+async function readPage(
+  readEvent: ReadEvent,
+  sessionId: string,
+  fromSeq: number,
+  toSeq: number,
+): Promise<ObservedEvent[] | undefined> {
+  // `readEvent` is a window around one seq: targeting the end of the range and
+  // asking for everything before it reads exactly this page.
+  const window = await readEvent({
+    sessionId,
+    seq: toSeq,
+    before: toSeq - fromSeq,
+    after: 0,
+  })
+  if (window === undefined || !Array.isArray(window.events)) return undefined
+  const mapped: ObservedEvent[] = []
+  for (const raw of window.events as RawEvent[]) {
+    if (typeof raw?.seq !== 'number' || !Number.isInteger(raw.seq)) continue
+    if (raw.seq < fromSeq || raw.seq > toSeq) continue
+    if (typeof raw.type !== 'string') continue
+    mapped.push({
+      seq: raw.seq,
+      type: raw.type,
+      data: (raw.data ?? {}) as EventPayload,
+      ...raw.ignorable === true ? { ignorable: true } : {},
+    })
+  }
+  mapped.sort((left, right) => left.seq - right.seq)
+  // A pruned or forked log can answer with a shorter window. A partial range is
+  // not a backfill: folding it in would consume the remaining hole unread.
+  if (mapped.length !== toSeq - fromSeq + 1) return undefined
+  const head = mapped[0]
+  const tail = mapped[mapped.length - 1]
+  if (head === undefined || tail === undefined) return undefined
+  if (head.seq !== fromSeq || tail.seq !== toSeq) return undefined
+  return mapped
+}
+
 /**
  * Build the reader over the harness's session-query service.
  * @param ctx - Cordis context of this plugin's fiber.
@@ -73,36 +135,26 @@ export function createHistoryReader(ctx: Context): HistoryReader {
         ? ctx.get('sessionQuery') as SessionQueryService | undefined
         : undefined
       if (service === undefined || typeof service.readEvent !== 'function') return undefined
-      try {
-        // `readEvent` is a window around one seq: targeting the end of the range
-        // and asking for everything before it reads exactly the hole.
-        const window = await service.readEvent({ sessionId, seq: toSeq, before: toSeq - fromSeq, after: 0 })
-        if (window === undefined || !Array.isArray(window.events)) return undefined
-        const mapped: ObservedEvent[] = []
-        for (const raw of window.events as RawEvent[]) {
-          if (typeof raw?.seq !== 'number' || !Number.isInteger(raw.seq)) continue
-          if (raw.seq < fromSeq || raw.seq > toSeq) continue
-          if (typeof raw.type !== 'string') continue
-          mapped.push({
-            seq: raw.seq,
-            type: raw.type,
-            data: (raw.data ?? {}) as EventPayload,
-            ...raw.ignorable === true ? { ignorable: true } : {},
-          })
+      const events: ObservedEvent[] = []
+      let cursor = fromSeq
+      let pageSize = READ_WINDOW_EVENTS
+      while (cursor <= toSeq) {
+        const end = Math.min(cursor + pageSize - 1, toSeq)
+        let page: ObservedEvent[] | undefined
+        try {
+          page = await readPage(service.readEvent, sessionId, cursor, end)
+        } catch {
+          // A deployment may cap the window below the harness default. Retry the
+          // same page smaller rather than recording a readable hole as a gap.
+          if (pageSize <= 1) return undefined
+          pageSize = Math.max(1, Math.floor(pageSize / 2))
+          continue
         }
-        mapped.sort((left, right) => left.seq - right.seq)
-        // A pruned or forked log can answer with a shorter window. A partial range
-        // is not a backfill: folding it in would consume the remaining hole unread.
-        if (mapped.length !== toSeq - fromSeq + 1) return undefined
-        const head = mapped[0]
-        const tail = mapped[mapped.length - 1]
-        if (head === undefined || tail === undefined) return undefined
-        if (head.seq !== fromSeq || tail.seq !== toSeq) return undefined
-        return mapped
-      } catch {
-        // A failed read is the same as no reader: the caller records the gap.
-        return undefined
+        if (page === undefined) return undefined
+        events.push(...page)
+        cursor = end + 1
       }
+      return events
     },
   }
 }
