@@ -519,7 +519,7 @@ console.log('project scope without a project is dropped, not committed')
     .some(record => record.content === 'Prefer Chinese for explanations.'))
 }
 
-console.log('a low-confidence add is stored but not served')
+console.log('an implied add stores the computed confidence')
 {
   const harnessed = harness({
     sessionId: 'session_unsure',
@@ -532,7 +532,7 @@ console.log('a low-confidence add is stored but not served')
   check('the record is written', outcome.operations.add === 1 && outcome.rejected === 0, JSON.stringify(outcome))
   check('the window was still consumed', markOf('session_unsure') === 80)
   const stored = readStore(userLayout(MEMORY).storePath).records.find(record => record.title === 'The user may prefer X.')
-  check('the stored record keeps its low confidence', stored?.confidence === 0.4, JSON.stringify(stored?.confidence))
+  check('the stored confidence comes from the citation and the label', stored?.confidence === 0.84, JSON.stringify(stored?.confidence))
 }
 
 console.log('a dry run neither writes nor advances')
@@ -841,7 +841,7 @@ console.log('a still-over-long plan is rejected with metadata')
     JSON.stringify(outcome.rejected_details))
 }
 
-console.log('a low-confidence add is stored')
+console.log('a low-confidence add stores its computed confidence')
 {
   const low = '{"operations":[{"action":"add","scope":"project","title":"A low-confidence fact.","content":"A low-confidence fact.","confidence":0.5,"evidence_event_seqs":[1]}]}'
   const harnessed = harness({ sessionId: 'session_low_confidence', modelAnswer: low })
@@ -849,10 +849,10 @@ console.log('a low-confidence add is stored')
   const outcome = await harnessed.consolidation.consolidate(harnessed.agent)
   check('the operation is committed', outcome.operations.add === 1 && outcome.rejected === 0, JSON.stringify(outcome))
   const stored = readStore(projectLayout(MEMORY, PROJECT).storePath).records.find(record => record.title === 'A low-confidence fact.')
-  check('the stored record keeps its confidence', stored?.confidence === 0.5, JSON.stringify(stored?.confidence))
+  check('the stored record keeps its computed confidence', stored?.confidence === 0.84, JSON.stringify(stored?.confidence))
 }
 
-console.log('feedback adjusts decay metadata')
+console.log('feedback moves the score metadata')
 {
   const options = {
     scopes: { user: userLayout(MEMORY), project: id => projectLayout(MEMORY, id) },
@@ -878,9 +878,37 @@ console.log('feedback adjusts decay metadata')
   const outcome = await harnessed.consolidation.consolidate(harnessed.agent)
   check('the feedback id reaches the audit', outcome.feedback?.confirmed?.[0] === seeded.id, JSON.stringify(outcome.feedback))
   const after = readStore(projectLayout(MEMORY, PROJECT).storePath).records.find(record => record.id === seeded.id)
-  check('confirmed feedback grows stability', after.stability_days > before.stability_days, `${String(before.stability_days)} -> ${String(after.stability_days)}`)
-  check('confirmed feedback keeps ease at the cap', after.ease === 2.5 && after.ease >= before.ease, `${String(before.ease)} -> ${String(after.ease)}`)
+  check('confirmed feedback counts the use', after.effective_count === (before.effective_count ?? 0) + 1, String(after.effective_count))
+  check('confirmed feedback moves the effective time', after.last_effective_at !== undefined && after.last_effective_at >= before.updated_at)
   check('confirmed feedback increments its count', after.feedback_confirmed === 1, String(after.feedback_confirmed))
+}
+
+console.log('a corrected verdict retires the record')
+{
+  const options = {
+    scopes: { user: userLayout(MEMORY), project: id => projectLayout(MEMORY, id) },
+    tombstones: tombstoneLayout(MEMORY),
+    lockTimeoutMs: 3000,
+    staleLockMs: 60000,
+    maxEvidencePerMemory: 8,
+    logger: { warn: () => {} },
+  }
+  const seeded = await addMemory(options, {
+    content: 'A wrong fact.',
+    title: 'A wrong fact.',
+    scope: 'project',
+    projectId: PROJECT,
+    confidence: 0.8,
+  })
+  const harnessed = harness({
+    sessionId: 'session_corrected',
+    modelAnswer: JSON.stringify({ operations: [], feedback: [{ target_id: seeded.id, verdict: 'corrected' }] }),
+  })
+  observe(harnessed, [human(1, '继续'), toolResult(2, `memory_get ${seeded.id}`)])
+  await harnessed.consolidation.consolidate(harnessed.agent)
+  const after = readStore(projectLayout(MEMORY, PROJECT).storePath).records.find(record => record.id === seeded.id)
+  check('the corrected record is archived', after.status === 'archived', String(after.status))
+  check('the correction is counted', after.feedback_corrected === 1, String(after.feedback_corrected))
 }
 
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)

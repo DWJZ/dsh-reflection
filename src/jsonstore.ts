@@ -48,6 +48,8 @@ interface IndexRow {
   derived_from?: { project_id: string; record_id: string }[]
   access_count?: number
   last_access_at?: string
+  last_effective_at?: string
+  effective_count?: number
   stability_days?: number
   ease?: number
   feedback_confirmed?: number
@@ -157,6 +159,8 @@ function readRecords(storePath: string, document: StoreDocument): MemoryRecord[]
         ...row.derived_from === undefined ? {} : { derived_from: row.derived_from },
         ...row.access_count === undefined ? {} : { access_count: row.access_count },
         ...row.last_access_at === undefined ? {} : { last_access_at: row.last_access_at },
+        ...row.last_effective_at === undefined ? {} : { last_effective_at: row.last_effective_at },
+        ...row.effective_count === undefined ? {} : { effective_count: row.effective_count },
         ...row.stability_days === undefined ? {} : { stability_days: row.stability_days },
         ...row.ease === undefined ? {} : { ease: row.ease },
         ...row.feedback_confirmed === undefined ? {} : { feedback_confirmed: row.feedback_confirmed },
@@ -186,6 +190,8 @@ function readRecords(storePath: string, document: StoreDocument): MemoryRecord[]
       ...row.derived_from === undefined ? {} : { derived_from: row.derived_from },
       ...row.access_count === undefined ? {} : { access_count: row.access_count },
       ...row.last_access_at === undefined ? {} : { last_access_at: row.last_access_at },
+        ...row.last_effective_at === undefined ? {} : { last_effective_at: row.last_effective_at },
+        ...row.effective_count === undefined ? {} : { effective_count: row.effective_count },
       ...row.stability_days === undefined ? {} : { stability_days: row.stability_days },
       ...row.ease === undefined ? {} : { ease: row.ease },
       ...row.feedback_confirmed === undefined ? {} : { feedback_confirmed: row.feedback_confirmed },
@@ -518,6 +524,8 @@ function indexRowOf(record: MemoryRecord) {
     ...record.derived_from === undefined ? {} : { derived_from: record.derived_from },
     ...record.access_count === undefined ? {} : { access_count: record.access_count },
     ...record.last_access_at === undefined ? {} : { last_access_at: record.last_access_at },
+        ...record.last_effective_at === undefined ? {} : { last_effective_at: record.last_effective_at },
+        ...record.effective_count === undefined ? {} : { effective_count: record.effective_count },
     ...record.stability_days === undefined ? {} : { stability_days: record.stability_days },
     ...record.ease === undefined ? {} : { ease: record.ease },
     ...record.feedback_confirmed === undefined ? {} : { feedback_confirmed: record.feedback_confirmed },

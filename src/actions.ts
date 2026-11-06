@@ -24,7 +24,8 @@ import { findSecretIn } from './redact.js'
 import { MAX_CONTENT_CHARS, charLength, newMemoryId, normalizeContent, validateMemory } from './schema.js'
 import type { ActionInput, ActionOptions, AddInput, ArchiveInput, EvidenceEntry, MemoryRecord, MemoryScope, MemoryStore, RecordTarget, ScopeInput, ScopeLayout, TargetedInput, TombstoneEntry } from './types/memory.js'
 import { failureMessage } from './errors.js'
-import { accessUpdate, initialStability, stabilityDays } from './priority.js'
+import { accessUpdate } from './priority.js'
+import { initialConfidence } from './confidence.js'
 
 /**
  * Confidence of a record the user asked for directly.
@@ -96,7 +97,11 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
     }
 
     const at = nowIso(options)
-    const confidence = requireConfidence(input.confidence, PHASE1_CONFIDENCE)
+    const confidence = requireConfidence(input.confidence, initialConfidence({
+      evidence: input.evidence === undefined ? [] : [input.evidence],
+      derivedFrom: input.derivedFrom,
+      assertion: input.assertion ?? (input.source === 'agent' ? undefined : 'stated'),
+    }))
     const record = {
       id: newMemoryId(),
       scope: input.scope,
@@ -113,8 +118,8 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
       ...input.derivedFrom === undefined ? {} : { derived_from: input.derivedFrom },
       ...input.comment === undefined ? {} : { comment: input.comment },
       access_count: 0,
-      stability_days: initialStability(confidence),
-      ease: 2.5,
+      effective_count: 0,
+      last_effective_at: at,
       feedback_confirmed: 0,
       feedback_corrected: 0,
     }
@@ -153,7 +158,10 @@ export async function updateMemory(options: ActionOptions, input: TargetedInput)
       content,
       source: input.source ?? 'explicit',
       evidence,
-      confidence: requireConfidence(input.confidence, EXPLICIT_UPDATE_CONFIDENCE),
+      confidence: requireConfidence(input.confidence, initialConfidence({
+      evidence: input.evidence === undefined ? [] : [input.evidence],
+      assertion: input.assertion ?? (input.source === 'agent' ? undefined : 'stated'),
+    })),
       updated_at: nowIso(options),
     }
     validateMemory(record, { maxEvidencePerMemory: options.maxEvidencePerMemory })
@@ -185,7 +193,10 @@ export async function supersedeMemory(options: ActionOptions, input: TargetedInp
   return apply(options, located.layout, (store: MemoryStore) => {
     const current = requireActive(store, input.id)
     const at = nowIso(options)
-    const confidence = requireConfidence(input.confidence, PHASE1_CONFIDENCE)
+    const confidence = requireConfidence(input.confidence, initialConfidence({
+      evidence: input.evidence === undefined ? [] : [input.evidence],
+      assertion: input.assertion ?? (input.source === 'agent' ? undefined : 'stated'),
+    }))
     const replacement = {
       id: newMemoryId(),
       scope: current.scope,
@@ -200,8 +211,8 @@ export async function supersedeMemory(options: ActionOptions, input: TargetedInp
       status: 'active',
       superseded_by: null,
       access_count: 0,
-      stability_days: initialStability(confidence),
-      ease: 2.5,
+      effective_count: 0,
+      last_effective_at: at,
       feedback_confirmed: 0,
       feedback_corrected: 0,
     }
@@ -630,12 +641,14 @@ export interface FeedbackUpdate {
 }
 
 /**
- * Apply consolidation feedback to a record's decay metadata.
+ * Apply consolidation feedback to a record.
  *
- * Confirmed feedback grows stability by its ease and raises ease; corrected
- * feedback halves stability and lowers ease; neutral does nothing. Failures are
- * warnings: a feedback write must not fail the consolidation that already
- * committed.
+ * A confirmed verdict is the only "this memory did its job" signal: it counts
+ * the use and moves the effective time, so the score decays more slowly. A
+ * corrected verdict retires the record instead of lowering its score: the fact
+ * was wrong, and serving it again would repeat the error. Neutral does nothing.
+ * Failures are warnings: a feedback write must not fail the consolidation that
+ * already committed.
  * @param options - the action wiring.
  * @param updates - reviewed verdicts, already limited to records found in the run.
  * @returns nothing.
@@ -650,20 +663,19 @@ export async function applyFeedback(options: ActionOptions, updates: readonly Fe
       await apply(options, layout, (store: MemoryStore) => {
         const current = store.records.find((record: MemoryRecord) => record.id === update.id && record.status === 'active')
         if (current === undefined) return { changed: false, result: { action: 'noop', id: update.id, reason: 'not-active' } }
-        const ease = current.ease ?? 2.5
         const at = nowIso(options)
         const next = update.verdict === 'confirmed'
           ? {
             ...current,
-            stability_days: Math.min(365, stabilityDays(current) * ease),
-            ease: Math.min(2.5, ease + 0.1),
+            effective_count: (current.effective_count ?? 0) + 1,
+            last_effective_at: at,
             feedback_confirmed: (current.feedback_confirmed ?? 0) + 1,
             last_feedback_at: at,
           }
           : {
             ...current,
-            stability_days: Math.max(1, stabilityDays(current) * 0.5),
-            ease: Math.max(1.3, ease - 0.2),
+            status: 'archived',
+            comment: 'feedback: corrected',
             feedback_corrected: (current.feedback_corrected ?? 0) + 1,
             last_feedback_at: at,
           }

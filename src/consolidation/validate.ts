@@ -21,6 +21,7 @@
  */
 
 import { MAX_CONTENT_CHARS, charLength } from '../schema.js'
+import { initialConfidence } from '../confidence.js'
 import { findSecretIn, redactText } from '../redact.js'
 import type { AddOperation, AutoOperation, EvidenceEntry, MemoryRecord, MemoryScope, TargetedOperation } from '../types/memory.js'
 import type { ObservedEvent } from '../types/trajectory.js'
@@ -177,18 +178,14 @@ export function reviewOperation(operation: unknown, context: ReviewContext): Rev
   if (title === '') return { kind: 'rejected', reason: 'title is missing', code: 'title-missing' }
   if (/[\n\r\u2028\u2029]/u.test(title)) return { kind: 'rejected', reason: 'title is not a single line', code: 'title-not-single-line' }
 
-  const confidence = proposal.confidence
-  if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
-    return { kind: 'rejected', reason: 'confidence must be a number in [0, 1]', code: 'confidence-not-a-number' }
+  // A contradicting fact must replace the record it contradicts; an add would
+  // leave both in service and let the summary describe a conflict.
+  if (action === 'add' && proposal.relation === 'contradicts') {
+    return { kind: 'rejected', reason: 'an add cannot contradict existing Memory; use update or supersede', code: 'relation-contradicts' }
   }
   const target = action === 'add' ? undefined : findTarget(proposal.target_id, context)
   if (action !== 'add' && target === undefined) {
     return { kind: 'rejected', reason: `target_id ${JSON.stringify(proposal.target_id ?? null)} is not an active Memory this Session can see`, code: 'target-not-visible' }
-  }
-  if (target !== undefined && confidence < (target.confidence ?? 1)) {
-    // A rewrite retires the target. Replacing a more confident fact with a less
-    // confident one is the one confidence gate left: adds have no such collateral.
-    return { kind: 'rejected', reason: `confidence ${String(confidence)} is below the target's ${String(target.confidence ?? 1)}`, code: 'confidence-below-target' }
   }
 
   // `update` and `supersede` take their scope and category from the record they
@@ -201,6 +198,22 @@ export function reviewOperation(operation: unknown, context: ReviewContext): Rev
 
   const evidence = buildEvidence(proposal.evidence_event_seqs, { ...context, content })
   if (evidence.kind === 'rejected') return evidence
+  // The two dimensions decide the confidence this write is created with: the
+  // checkable citation built above, and how strongly the model says the
+  // trajectory asserts the fact. The model never supplies a number.
+  const assertion = proposal.assertion
+  if (assertion !== undefined && (typeof assertion !== 'string' || !['stated', 'implied', 'mentioned'].includes(assertion))) {
+    return { kind: 'rejected', reason: 'assertion must be stated, implied, or mentioned', code: 'assertion-invalid' }
+  }
+  const confidence = initialConfidence({
+    evidence: [evidence.entry],
+    ...assertion === undefined ? {} : { assertion },
+  })
+  if (target !== undefined && confidence < (target.confidence ?? 1)) {
+    // A rewrite retires the target. Replacing a more confident fact with a less
+    // confident one is the one confidence gate left: adds have no such collateral.
+    return { kind: 'rejected', reason: `confidence ${String(confidence)} is below the target's ${String(target.confidence ?? 1)}`, code: 'confidence-below-target' }
+  }
 
   const shared = {
     scope: scope as MemoryScope,

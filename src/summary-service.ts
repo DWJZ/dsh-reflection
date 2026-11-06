@@ -13,6 +13,7 @@
 
 import { readStore } from './jsonstore.js'
 import { SUMMARY_SYSTEM_PROMPT, buildSummaryPrompt, readSummaryDocument, recordsSignature, summaryIsStale, truncateBytes, writeSummaryDocument } from './summary.js'
+import { score } from './priority.js'
 import { streamModelText } from './consolidation/model.js'
 import { failureMessage } from './errors.js'
 import type { Context } from '@deepseek-ai/cordis'
@@ -29,6 +30,15 @@ const ENVELOPE_ALLOWANCE_BYTES = 600
 /** How many times to ask for a shorter summary before truncating. */
 const SUMMARY_ATTEMPTS = 3
 
+/**
+ * Read the service clock.
+ * @param options - the service options carrying an optional injectable clock.
+ * @returns epoch milliseconds.
+ */
+function nowOf(options: SummaryServiceOptions): number {
+  return options.now?.() ?? Date.now()
+}
+
 /** What one summary service is given. */
 export interface SummaryServiceOptions {
   /** The two scope layouts, resolved per project id. */
@@ -41,8 +51,8 @@ export interface SummaryServiceOptions {
   logger?: { warn(message: string | Error): void; debug?(message: string): void } | undefined
   /** Injection budget the summary is written for. */
   summaryBudgetBytes: number
-  /** Lowest record confidence the summary describes; lower records never invalidate it. */
-  summaryMinConfidence: number
+  /** Lowest record score the summary describes; lower records never invalidate it. */
+  summaryMinScore: number
   /** Injectable clock, in epoch milliseconds. */
   now?(): number
 }
@@ -77,13 +87,13 @@ export function createSummaryService(options: SummaryServiceOptions) {
     const llm = options.llmScope()
     if (llm === undefined) return
     const store = readStore(layout.storePath)
-    if (!store.records.some((record: MemoryRecord) => record.status === 'active' && record.confidence >= options.summaryMinConfidence)) return
+    if (!store.records.some((record: MemoryRecord) => record.status === 'active' && score(record, nowOf(options)) >= options.summaryMinScore)) return
     const cached = readSummaryDocument(layout.summaryPath)
     if (!summaryIsStale(cached, store.revision, options.summaryBudgetBytes)) return
     // A revision bump can come from access statistics alone. When the active
     // records are byte for byte the ones the cached text describes, keep that text:
     // rewriting it would change the runtime context the agent is sent for no reason.
-    const signature = recordsSignature(store.records, options.summaryMinConfidence)
+    const signature = recordsSignature(store.records, options.summaryMinScore, nowOf(options))
     if (cached !== undefined
       && cached.signature === signature
       && cached.budget === options.summaryBudgetBytes) {
@@ -106,9 +116,9 @@ export function createSummaryService(options: SummaryServiceOptions) {
       scopeLabel,
       ...projectPath === undefined ? {} : { projectPath },
       budgetBytes: contentBudget,
-      minConfidence: options.summaryMinConfidence,
+      minScore: options.summaryMinScore,
       ...cached?.content === undefined ? {} : { previous: cached.content },
-      now: options.now?.() ?? Date.now(),
+      now: nowOf(options),
     })
     const call = (text: string) => streamModelText(llm, {
       session,

@@ -19,7 +19,7 @@ import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { writeAtomic } from './jsonstore.js'
-import { priority } from './priority.js'
+import { score } from './priority.js'
 import type { MemoryRecord } from './types/memory.js'
 
 /**
@@ -190,7 +190,7 @@ export function writeSummaryDocument(path: string, entry: CachedSummary): void {
  * @param input.projectPath - the project root, when the scope is a project.
  * @param input.budgetBytes - the injection budget the summary must fit.
  * @param input.previous - the summary already cached, when one exists.
- * @param input.minConfidence - lowest confidence a described record may have.
+ * @param input.minScore - lowest score a described record may have.
  * @returns the user message.
  */
 export function buildSummaryPrompt(input: {
@@ -200,17 +200,17 @@ export function buildSummaryPrompt(input: {
   budgetBytes: number
   /** Summary already cached for this scope; a call with nothing new returns it as-is. */
   previous?: string | undefined
-  /** Lowest confidence a record may have to be described; older reviews may propose less. */
-  minConfidence?: number | undefined
-  /** Clock for the decay-based priority order. */
+  /** Lowest score a record may have to be described; lower records wait to prove themselves. */
+  minScore?: number | undefined
+  /** Clock for the decay-based order and the score threshold. */
   now?: number | undefined
 }): string {
   const now = input.now ?? Date.now()
-  const minConfidence = input.minConfidence ?? 0
+  const minScore = input.minScore ?? 0
   const active = input.records
-    .filter((record: MemoryRecord) => record.status === 'active' && record.confidence >= minConfidence)
+    .filter((record: MemoryRecord) => record.status === 'active' && score(record, now) >= minScore)
     .slice()
-    .sort((left: MemoryRecord, right: MemoryRecord) => priority(right, now) - priority(left, now)
+    .sort((left: MemoryRecord, right: MemoryRecord) => score(right, now) - score(left, now)
       || (left.updated_at < right.updated_at ? 1 : left.updated_at > right.updated_at ? -1 : 0))
   const header = input.projectPath === undefined
     ? `Scope: ${input.scopeLabel}. ${String(active.length)} active records.`
@@ -300,12 +300,13 @@ export function renderMemorySummary(input: {
  * statistics can be absorbed without asking a model: the text stays byte for
  * byte, and so does the runtime context built from it.
  * @param records - every record in the scope, including inactive ones.
- * @param minConfidence - lowest confidence a record may have to be described; the default counts every active record.
+ * @param minScore - lowest score a described record may have; the default counts every active record.
+ * @param nowMs - current epoch milliseconds, for the score.
  * @returns a stable signature of the described records' titles and content.
  */
-export function recordsSignature(records: readonly MemoryRecord[], minConfidence = 0): string {
+export function recordsSignature(records: readonly MemoryRecord[], minScore = 0, nowMs = Date.now()): string {
   const rows = records
-    .filter(record => record.status === 'active' && record.confidence >= minConfidence)
+    .filter(record => record.status === 'active' && score(record, nowMs) >= minScore)
     .map(record => `${record.id}\u0000${record.title}\u0000${createHash('sha1').update(record.content).digest('hex')}`)
     .sort()
   return createHash('sha1').update(rows.join('\n')).digest('hex')

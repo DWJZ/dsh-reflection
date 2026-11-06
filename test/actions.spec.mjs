@@ -177,7 +177,7 @@ const updated = await actions.updateMemory(clocked(60000), {
 })
 check('the action is updated', updated.action === 'updated')
 check('the identity is kept', updated.id === added.id)
-check('the result reports the restated confidence', updated.confidence === 0.95, String(updated.confidence))
+check('the result reports the restated confidence', updated.confidence === 0.99, String(updated.confidence))
 const after = recordOf(PROJECT_A, added.id)
 check('the content changed', after.content === '该项目已迁移到 pnpm')
 check('created_at is preserved', after.created_at === before.created_at)

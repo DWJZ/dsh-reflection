@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 `dsh-reflection` gives a Harness agent long-term Memory that survives across Sessions. It stores what the user explicitly asks it to remember, keeps user-wide and project-scoped facts apart, injects a small index of the active facts into every new Session, and exposes the whole store through `/memory`.
 
-A fact enters Memory in one of two ways. The user asks for it, or the plugin learns it: after a Session goes idle and stays idle, the trajectory since the last consolidation is read once, and a model decides what in it is worth keeping. The plugin decides what *may* be stored — it verifies every citation, applies the confidence gate for rewrites, screens for secrets, and commits through the same path an explicit request takes. Automatic consolidation never deletes anything.
+A fact enters Memory in one of two ways. The user asks for it, or the plugin learns it: after a Session goes idle and stays idle, the trajectory since the last consolidation is read once, and a model decides what in it is worth keeping. The plugin decides what *may* be stored — it verifies every citation, computes the write-time confidence from the citation and the model assertion label, gates rewrites against the target, screens for secrets, and commits through the same path an explicit request takes. Automatic consolidation never deletes anything.
 
 What automatic learning is not: it does not run while the user is working, it does not read the whole Session again each time, and it does not store anything it cannot point at in the trajectory.
 
@@ -145,7 +145,7 @@ Set fields on the plugin row in the profile's `cordis.patch.yml`:
 | `dshHome` | `$DSH_HOME`, else `~/.dsh` | Harness home; Memory always sits below it |
 | `sessionEvents` | `false` | the only switch for the rows this plugin writes into the Session log. The harness offers a plugin no supported way to append Session events, so this uses an unknown type with the `ignorable` marker — a side door, not an interface — and stays off until a deployment asks |
 | `summaryBudgetBytes` | `1200` | Injected summary size, in UTF-8 bytes |
-| `summaryMinConfidence` | `0.5` | Lowest record confidence the summary describes; lower writes never change or invalidate it |
+| `summaryMinScore` | `0.5` | Lowest record score the summary describes; lower writes never change or invalidate it |
 | `retrievalTopK` | `8` | Default result count for `memory_search` |
 | `projectRootMarkers` | `['.git']` | Names that identify a project root |
 | `lockTimeoutMs` | `10000` | Wait for the store lock before failing |

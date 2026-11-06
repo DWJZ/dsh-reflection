@@ -174,12 +174,12 @@ check('the uncertain record is stored as such', loweredForRestatement.committed.
 const restatedByUser = await commitOperations(OPTIONS, [{
   action: 'update', scope: 'project', category: 'state',
   target_id: projectRecords().find(record => record.content === 'A fact the consolidator was unsure about.').id,
-  content: 'A fact the user restated.',
+  content: 'A fact the user restated.', confidence: 0.99,
   projectId: PROJECT, evidence: provenance([393]),
 }])
 check('an explicit restatement is recorded', restatedByUser.committed.update === 1)
-check('and it is nearly certain, not uncertain and not absolute',
-  projectRecords().find(record => record.content === 'A fact the user restated.')?.confidence === 0.95,
+check('a stated restatement stores the top confidence',
+  projectRecords().find(record => record.content === 'A fact the user restated.')?.confidence === 0.99,
   String(projectRecords().find(record => record.content === 'A fact the user restated.')?.confidence))
 const autoUpdate = await commitOperations(OPTIONS, [{
   action: 'update', scope: 'project', category: 'state',
@@ -223,9 +223,9 @@ const explicit = await commitOperations(OPTIONS, [{
   projectId: undefined,
   evidence: provenance([404]),
 }])
-check('a write with no stated confidence takes the explicit value',
+check('a write with no assertion reads as implied',
   explicit.committed.add === 1
-  && userRecords().find(record => record.content === 'A fact the user asked for.')?.confidence === 0.99)
+  && userRecords().find(record => record.content === 'A fact the user asked for.')?.confidence === 0.84)
 const badScore = await commitOperations(OPTIONS, [{ ...addition({ content: 'bad score' }), confidence: 2 }])
 check('an unusable confidence is reported as a failure',
   badScore.failures.length === 1 && String(badScore.failures[0].message).includes('confidence'),

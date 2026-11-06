@@ -74,7 +74,7 @@ const addition = (overrides = {}) => ({
   category: 'state',
   title: 'The project uses pnpm for dependencies.',
   content: 'The project uses pnpm.',
-  confidence: 0.94,
+  assertion: 'stated',
   evidence_event_seqs: [201, 203],
   ...overrides,
 })
@@ -84,7 +84,7 @@ const accepted = review(addition())
 check('the operation is accepted', accepted.kind === 'accepted', JSON.stringify(accepted))
 check('the scope is kept', accepted.operation?.scope === 'project')
 check('the project is attached', accepted.operation?.projectId === 'proj_a')
-check('the confidence is kept', accepted.operation?.confidence === 0.94)
+check('the confidence comes from the citation and the statement', accepted.operation?.confidence === 0.99, String(accepted.operation?.confidence))
 check('the title is kept', accepted.operation?.title === 'The project uses pnpm for dependencies.')
 check('a missing title is rejected', review(addition({ title: undefined })).code === 'title-missing')
 check('a multi-line title is rejected', review(addition({ title: 'two\nlines' })).code === 'title-not-single-line')
@@ -126,17 +126,20 @@ check('a seq with no event behind it is refused',
   review(addition({ evidence_event_seqs: [202] }), { visibleSeqs: new Set([201, 202, 203, 206]) }).reason
     .includes('no event behind it'))
 
-console.log('the confidence gate')
-check('a low-confidence add is stored',
-  review(addition({ confidence: 0.5 })).kind === 'accepted')
-check('the floor is inclusive',
-  review(addition({ confidence: 0.8 })).kind === 'accepted')
-check('a missing confidence is refused',
-  review(addition({ confidence: undefined })).reason.includes('[0, 1]'))
-check('a confidence above 1 is refused',
-  review(addition({ confidence: 1.5 })).reason.includes('[0, 1]'))
-check('a low-confidence add stays accepted',
-  review(addition({ confidence: 0.2 })).kind === 'accepted')
+console.log('the assertion label decides the confidence')
+check('an implied statement stores a lower confidence',
+  review(addition({ assertion: 'implied' })).operation?.confidence === 0.84,
+  String(review(addition({ assertion: 'implied' })).operation?.confidence))
+check('a mentioned statement stores less',
+  review(addition({ assertion: 'mentioned' })).operation?.confidence === 0.72,
+  String(review(addition({ assertion: 'mentioned' })).operation?.confidence))
+check('a missing label reads as implied',
+  review(addition({ assertion: undefined })).operation?.confidence === 0.84,
+  String(review(addition({ assertion: undefined })).operation?.confidence))
+check('an unknown label is refused',
+  review(addition({ assertion: 'guessed' })).code === 'assertion-invalid')
+check('the model cannot send a number instead',
+  review(addition({ assertion: 0.9 })).code === 'assertion-invalid')
 
 console.log('content')
 check('empty content is refused', review(addition({ content: '   ' })).reason === 'content is empty')
@@ -158,14 +161,20 @@ check('a non-object proposal is refused', review('add').reason === 'operation is
 check('the automatic action list is exactly the documented four',
   validate.AUTO_ACTIONS.join(',') === 'add,update,supersede,noop')
 
+console.log('a contradicting add is refused')
+check('an add that contradicts is refused',
+  review(addition({ relation: 'contradicts' })).code === 'relation-contradicts')
+check('an overlapping add is accepted',
+  review(addition({ relation: 'overlaps' })).kind === 'accepted')
+
 console.log('update and supersede act on what exists')
-const superseding = { action: 'supersede', target_id: 'mem_old', title: 'The project now uses pnpm.', content: 'The project now uses pnpm.', confidence: 0.95, evidence_event_seqs: [201] }
+const superseding = { action: 'supersede', target_id: 'mem_old', title: 'The project now uses pnpm.', content: 'The project now uses pnpm.', assertion: 'stated', evidence_event_seqs: [201] }
 const supersedeReview = review(superseding)
 check('a supersede against an active Memory is accepted', supersedeReview.kind === 'accepted')
 check('a rewrite below the target confidence is refused',
-  review({ ...superseding, confidence: 0.5 }).reason.includes("below the target's 0.9"))
+  review({ ...superseding, assertion: 'implied' }).reason.includes("below the target's 0.9"))
 check('a rewrite at the target confidence is accepted',
-  review({ ...superseding, confidence: 0.6 }, { existing: [{ ...ACTIVE[0], confidence: 0.5 }] }).kind === 'accepted')
+  review({ ...superseding, assertion: 'implied' }, { existing: [{ ...ACTIVE[0], confidence: 0.5 }] }).kind === 'accepted')
 check('it inherits the target scope', supersedeReview.operation?.scope === 'project')
 check('it keeps the target id', supersedeReview.operation?.target_id === 'mem_old')
 check('it keeps the target project', supersedeReview.operation?.projectId === 'proj_a')
@@ -238,10 +247,10 @@ console.log('noop is a decision, not a failure')
 const plan = validate.reviewPlan({ operations: [
   addition(),
   { action: 'noop', reason: 'transient task state' },
-  addition({ content: 'too vague', confidence: 0.2 }),
+  addition({ content: 'too vague', assertion: 'mentioned' }),
   { action: 'forget', target_id: 'mem_old' },
 ] }, context())
-check('the good operation and the low-confidence add are accepted', plan.accepted.length === 2)
+check('the good operation and the lower-assurance add are accepted', plan.accepted.length === 2)
 check('the noop is separated from the failures',
   plan.noopReasons.length === 1 && plan.noopReasons[0] === 'transient task state')
 check('only the forbidden operation is rejected', plan.rejected.length === 1)

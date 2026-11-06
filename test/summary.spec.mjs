@@ -159,7 +159,7 @@ const thresholds = buildSummaryPrompt({
   ],
   scopeLabel: 'user',
   budgetBytes: 1200,
-  minConfidence: 0.5,
+  minScore: 0.5,
 })
 check('the high-confidence record is described', thresholds.includes('高置信事实'))
 check('the low-confidence record is not', !thresholds.includes('低置信事实'))

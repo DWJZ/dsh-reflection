@@ -185,8 +185,8 @@ export function validateMemory(record: MemoryRecord, options: CheckOptions = {})
       throw new TypeError(`dsh-reflection: memory ${record.id}: comment must be a single line`)
     }
   }
-  for (const field of ['access_count', 'feedback_confirmed', 'feedback_corrected']) {
-    const value = record[field as 'access_count' | 'feedback_confirmed' | 'feedback_corrected']
+  for (const field of ['access_count', 'effective_count', 'feedback_confirmed', 'feedback_corrected']) {
+    const value = record[field as 'access_count' | 'effective_count' | 'feedback_confirmed' | 'feedback_corrected']
     if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
       throw new TypeError(`dsh-reflection: memory ${record.id}: ${field} must be a non-negative number`)
     }
@@ -197,8 +197,8 @@ export function validateMemory(record: MemoryRecord, options: CheckOptions = {})
   if (record.ease !== undefined && (typeof record.ease !== 'number' || !Number.isFinite(record.ease) || record.ease < 1.3 || record.ease > 2.5)) {
     throw new TypeError(`dsh-reflection: memory ${record.id}: ease must be a number in [1.3, 2.5]`)
   }
-  for (const field of ['last_access_at', 'last_feedback_at']) {
-    const value = record[field as 'last_access_at' | 'last_feedback_at']
+  for (const field of ['last_access_at', 'last_effective_at', 'last_feedback_at']) {
+    const value = record[field as 'last_access_at' | 'last_effective_at' | 'last_feedback_at']
     if (value !== undefined && (typeof value !== 'string' || !Number.isFinite(Date.parse(value)))) {
       throw new TypeError(`dsh-reflection: memory ${record.id}: ${field} must be an ISO-8601 time`)
     }

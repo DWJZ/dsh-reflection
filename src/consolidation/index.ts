@@ -26,6 +26,7 @@ import { readStore } from '../jsonstore.js'
 import { createTrigger } from './trigger.js'
 import { batchWindow } from './normalize.js'
 import { buildRequest } from './policy.js'
+import { searchRecords } from '../retrieval.js'
 import { callConsolidator } from './model.js'
 import type { ConsolidationAnswer, ConsolidationUsage } from './model.js'
 import { parsePlan } from './policy.js'
@@ -45,7 +46,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { StateLockOptions } from './state.js'
 import type { ProjectEntry } from '../types/identity.js'
 import type { MemoryConsolidationSettings } from '../types/config.js'
-import type { ActionOptions, KillProbe } from '../types/memory.js'
+import type { ActionOptions, KillProbe, MemoryRecord } from '../types/memory.js'
 
 /** Session record name carrying this plugin's consolidation audit. */
 export const AUDIT_EVENT_TYPE = 'plugin:dsh-reflection/consolidation'
@@ -500,16 +501,20 @@ export function createConsolidation(options: ConsolidationOptions) {
       const existing = activeMemory(projectId)
       const referenced = referencedMemoryIds(window.entries)
       const accessed = existing.filter(record => referenced.has(record.id))
+      const candidates = candidateIds(existing, accessed, window.entries, projectId, now)
       const request = {
         session,
         sessionId,
         fromSeq: cursor + 1,
         toSeq: toSeq,
         entries: window.entries,
+        // Titles and ids keep the stable prefix small; the full text is sent only
+        // for the records this window could realistically target.
         existing: existing.map(record => ({
           id: record.id,
           scope: record.scope,
-          content: record.content,
+          title: record.title,
+          ...candidates.has(record.id) ? { content: record.content } : {},
         })),
         accessed: accessed.map(record => ({
           id: record.id,
@@ -783,6 +788,53 @@ function mergeEvents(backfilled: readonly ObservedEvent[], observed: readonly Ob
   for (const event of backfilled) bySeq.set(event.seq, event)
   for (const event of observed) bySeq.set(event.seq, event)
   return [...bySeq.values()].sort((left, right) => left.seq - right.seq)
+}
+
+
+/**
+ * Ids whose full text the consolidator may need.
+ *
+ * Records the window referenced are the obvious candidates; a keyword search over
+ * the window's latest human text adds the ones it arguably should have targeted,
+ * so the prompt can stay small without hiding a plausible rewrite target.
+ * @param existing - active Memory visible to this Session.
+ * @param accessed - records the window referenced.
+ * @param entries - the bounded trajectory entries.
+ * @param projectId - the current project, or null.
+ * @param now - clock source.
+ * @returns the ids that keep their content in the prompt.
+ */
+function candidateIds(
+  existing: readonly MemoryRecord[],
+  accessed: readonly MemoryRecord[],
+  entries: readonly unknown[],
+  projectId: string | null,
+  now: () => number,
+): Set<string> {
+  const ids = new Set(accessed.map(record => record.id))
+  const query = lastUserText(entries)
+  if (query === '') return ids
+  const found = searchRecords([...existing], {
+    query,
+    ...projectId === null ? {} : { projectId },
+    topK: 8,
+    now: now(),
+  })
+  for (const hit of found.results) ids.add(hit.id)
+  return ids
+}
+
+/**
+ * The window's latest human text, used as a search query.
+ * @param entries - the bounded trajectory entries.
+ * @returns the text, or an empty string when the window has no human message.
+ */
+function lastUserText(entries: readonly unknown[]): string {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index] as { role?: unknown; content?: unknown } | undefined
+    if (entry?.role === 'user' && typeof entry.content === 'string') return entry.content
+  }
+  return ''
 }
 
 /**

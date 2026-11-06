@@ -60,8 +60,12 @@ export interface MemoryRecord {
   derived_from?: { project_id: string; record_id: string }[] | undefined
   /** Weighted number of times the record was found. */
   access_count?: number | undefined
-  /** Last time the record was found, ISO-8601. */
+  /** Last time the record was found, ISO-8601. Diagnostic only; reads are not use. */
   last_access_at?: string | undefined
+  /** Last time a confirmed use showed the record does its job, ISO-8601. */
+  last_effective_at?: string | undefined
+  /** How many confirmed helpful uses the record has. */
+  effective_count?: number | undefined
   /** Decay scale in days; see `priority.ts`. */
   stability_days?: number | undefined
   /** SM-2-like ease, grown by confirmed feedback and shrunk by corrections. */
@@ -141,6 +145,8 @@ export interface AddInput {
   evidence?: EvidenceEntry | undefined
   /** Automatic writes state their reviewed confidence; explicit ones do not. */
   confidence?: number | undefined
+  /** How strongly the trajectory asserts the fact; a missing label reads as `implied`. */
+  assertion?: string | undefined
   /** Who writes it; defaults to the explicit path. */
   source?: MemorySource | undefined
   /** Source records this record was distilled from, for agent writes. */
@@ -159,6 +165,8 @@ export interface TargetedInput extends RecordTarget {
   evidence?: EvidenceEntry | undefined
   /** Automatic writes state their reviewed confidence; explicit ones do not. */
   confidence?: number | undefined
+  /** How strongly the trajectory asserts the fact; a missing label reads as `implied`. */
+  assertion?: string | undefined
   /** Who writes it; defaults to the explicit path. */
   source?: MemorySource | undefined
   /** Why it is being archived, when that applies. */

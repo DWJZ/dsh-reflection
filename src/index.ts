@@ -118,7 +118,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
     llmScope: () => llmScope ?? undefined,
     logger,
     summaryBudgetBytes: settings.summaryBudgetBytes,
-    summaryMinConfidence: settings.summaryMinConfidence,
+    summaryMinScore: settings.summaryMinScore,
   })
   let enabled = resolveEnabled(settings.memoryDir, settings.enabled)
   let runtimeFiber: { dispose(): Promise<void> } | null = null

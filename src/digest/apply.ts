@@ -81,7 +81,7 @@ export async function applyDigest(
         scope: 'user',
         source: 'agent',
         derivedFrom: candidate.derived_from,
-        confidence: 0.9,
+        assertion: 'synthesized',
       })
       if (typeof outcome.id !== 'string') throw new Error(`no record id for candidate ${String(index + 1)}`)
       recordId = outcome.id

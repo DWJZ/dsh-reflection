@@ -92,7 +92,7 @@ Memory 的物理位置不可配置：内部恒为 `path.join(resolvedDshHome, 'm
 | `sessionEvents` | boolean | `false` | — （本插件写 Session 轨迹行的**唯一**开关） |
 | `dshHome` | string | `$DSH_HOME` / `~/.dsh` | 非空 |
 | `summaryBudgetBytes` | number | `2400` | `>= 0`（注入摘要的 UTF-8 字节上限；摘要调用会被告知这个数字） |
-| `summaryMinConfidence` | number | `0.5` | `[0, 1]`（摘要只描述 confidence 不低于该值的记录；低于它的写入不会改变摘要文本，也不会触发重写） |
+| `summaryMinScore` | number | `0.5` | `[0, 1]`（摘要只描述 score 不低于该值的记录；低于它的写入不会改变摘要文本，也不会触发重写） |
 | `retrievalTopK` | number | `8` | `>= 1` |
 | `projectRootMarkers` | string[] | `['.git']` | 非空字符串项。**必须与 `@deepseek-ai/dsh-agent-instructions` 的 `projectRootMarkers` 一致** —— harness 用它决定项目根（指令文件的范围），Memory 用它决定项目身份。本地插件无法读取对方的已解析配置，所以两者靠"同名字段 + 同默认值 + 一起改"保持同步 |
 | `lockTimeoutMs` | number | `10000` | `> 0` |
@@ -175,33 +175,35 @@ ID 用 `crypto.randomUUID()` 加前缀：`mem_<uuid>`、`proj_<uuid>`。不自�
 
 ### 5.1 Confidence
 
-Storage schema 允许 `confidence ∈ [0, 1]`。Phase 1 writer 写固定值：
+Storage schema 允许 `confidence ∈ [0, 1]`。它是**创建时**的值，之后不再修改；模型只给标签，插件按两维加权算出数字：
 
-- `memory_remember` 不接受 `confidence` 参数，显式写入的记录一律 `0.99`（用户直接要求的事实接近确定，但不是"不可能被后续轨迹推翻"）；
-- **Phase 2 的自动写入持久化 reviewed 置信度**：ADD / SUPERSEDE 用模型给的值，UPDATE 把它写进被改写的记录。
-- **confidence 只用于两处**：新记录的初始 stability；以及改写门槛 —— `update`/`supersede` 要求新 confidence **不低于目标记录的 confidence**，否则拒绝（`confidence-below-target`）。`add` 一律写入并参与服务，confidence 低只影响它的 stability/priority。
+- **证据可验证性（0.60）**：引用 seq 且引文非空 = 1.0；只有引文 = 0.7；只有 seq = 0.6；无证据 = 0.3。
+- **陈述强度（0.40）**：`stated` = 1.0、`implied` = 0.6、`mentioned` = 0.3、`synthesized`（digest）= 0.4；缺失按 `implied`。
+- `confidence = min(0.99, 0.60 × 证据 + 0.40 × 陈述)`。
 
-### 5.2 使用、衰减与反馈
+显式 `memory_remember`、consolidation、digest 走**同一套**评估：显式写入的标签是 `stated`，证据来自用户消息的引文；consolidation 的模型在计划里给 `assertion` 标签；digest 用 `synthesized`。
+
+- **改写门槛**：`update`/`supersede` 要求算出的 confidence **不低于目标记录的 confidence**，否则拒绝（`confidence-below-target`）；`add` 一律写入并参与服务。
+- **冲突不是维度**：`add` 标注 `relation: contradicts` 时直接拒绝（`relation-contradicts`），必须改用 `update`/`supersede`。
+
+### 5.2 评分、衰减与反馈
 
 记录在索引里带：
 
 ```
-access_count / last_access_at
-stability_days / ease
+confidence / effective_count / last_effective_at
+access_count / last_access_at        （仅诊断，不参与评分）
 feedback_confirmed / feedback_corrected / last_feedback_at
 ```
 
-- **初始 stability**：`clamp(3 × 60^confidence, 3, 365)` 天。confidence 越高，衰减越慢；不按分类。
-- **衰减**：幂律 `R = 1 / (1 + age_days / stability_days)`；`age` 从上一次访问（没有则 `updated_at`）算起，`age = stability` 时 `R = 0.5`，长尾保证旧记录仍可被检索。
-- **priority**：`confidence × (0.4 + 0.6 × R)`；排序只用 confidence + 衰减，frequency 不进公式。
-- **找到**：`memory_get` 权重 1，`memory_search` 前 3 条权重 0.25；`access_count` 增加、`last_access_at` 刷新、`stability_days` 每次按 `1 + 0.01 × weight` 小幅增长（封顶 365）。summary 注入不计使用。
-- **反馈**：consolidation 的同一次调用可以返回 `feedback: [{target_id, verdict}]`，只允许本轮窗口里出现过的 id；`confirmed` 使 `stability × ease`、`ease + 0.1`，`corrected` 使 `stability × 0.5`、`ease - 0.2`，`neutral` 不变。audit 记录每个 verdict 的 id 列表，不存正文。
-- **排序**：摘要提示词按 priority 排序；`memory_search` 用 `relevance × (0.85 + 0.3 × priority)` 重排，所有 confidence 的 active 记录都参与。
-- 不做删除/降级：低 priority 只是排后面。
-- **显式 update 写入 `0.95`**（`EXPLICIT_UPDATE_CONFIDENCE`），既不沿用被改写记录的旧值，也不自称为 `0.99`：用户重申了内容，所以他确定；但这条记录是在别人的判断之上被修正的，不是他直接新建的；
-- Phase 1 ranking 不使用 confidence；
-- canonical 中 `[0, 1]` 都是合法 schema（不是只有 1.0）；
-- Phase 2 的 automatic consolidation 可直接写 `< 1.0`，不需要升级 schema。
+- **初始半衰期**：`H0 = clamp(3 × 60^confidence, 3, 365)` 天。
+- **当前半衰期**：`H = clamp(H0 × (1 + 0.01 × effective_count), 3, 365)`，确认越多衰减越慢。
+- **评分**：`score = confidence × 0.5^(age_days / H)`；`age` 从 `last_effective_at` 算起，缺省依次回退 `last_feedback_at` → `last_access_at` → `updated_at`。
+- **找到**：`memory_get` 权重 1、`memory_search` 前 3 条权重 0.25，只增加 `access_count` 并刷新 `last_access_at`；**读取不改变 score**。summary 注入不计使用。
+- **反馈**：consolidation 的同一次调用可以返回 `feedback: [{target_id, verdict}]`，只允许本轮窗口里出现过的 id；`confirmed` 使 `effective_count + 1`、`last_effective_at = now`，`corrected` **归档该记录**（`status = archived`），`neutral` 不变。audit 记录每个 verdict 的 id 列表，不存正文。
+- **排序**：摘要提示词按 score 排序；`memory_search` 用 `relevance × (0.85 + 0.3 × score)` 重排。
+- **迁移**：`effective_count ← feedback_confirmed`；`last_effective_at ← last_feedback_at → last_access_at → updated_at`。
+- `stability_days` / `ease` 保留在旧记录里但不再参与评分，后续删除。
 
 ### 5.2 校验规则
 
@@ -361,7 +363,7 @@ Phase 1 不承诺通用 PII detector，只在 prompt 与文档层面要求不主
 
 update / supersede 不允许模型再传 scope，避免矛盾参数。
 
-三个写入模式的结果都带 `confidence`：`add` 与 `supersede` 为 `0.99`，`update` 为 `0.95`；`duplicate` 造成的 `noop` 带被命中记录已有的 confidence。
+三个写入模式的结果都带写入时算出的 `confidence`（证据 + `assertion` 标签经同一套加权）；`duplicate` 造成的 `noop` 带被命中记录已有的 confidence。
 
 ### 8.2 Exact duplicate
 
@@ -662,7 +664,7 @@ Phase 1 不做 semantic retrieval，只做 scope filtering、keyword matching（
 
 比较时对 ASCII 做 case folding（**仅用于比较，不改动存储**）；重复判定（§8.2）保持大小写敏感。
 
-过滤顺序：scope → 打分 → **priority 重排**（`relevance × (0.85 + 0.3 × priority)`）→ top_k。所有 confidence 的 active 记录都参与检索；confidence 通过 priority 参与重排，不做过滤。
+过滤顺序：scope → 打分 → **score 重排**（`relevance × (0.85 + 0.3 × score)`）→ top_k。所有 active 记录都参与检索；score 通过重排参与排序，不做过滤。
 
 接口：
 
@@ -688,7 +690,7 @@ the index lists every record by title and id; each record has its own file under
 规则：
 
 - **不注入任何一条记录的正文。** envelope 只含：固定 notice、两个 `memories.json` 的绝对路径，以及指向 `memories/<id>.md` 的说明。它不含计数、日期或时间戳：这些值随每次写入变化，会让注入文本在一次什么都没学到的整理之后也发生变化。
-- **摘要由模型写。** confidence 不低于 `summaryMinConfidence`（默认 `0.5`）的 active 记录进入摘要候选，按 `priority`（confidence + 幂律衰减）排序，而不是按更新时间；低于门槛的写入不进摘要，也不改变 signature，因此不会触发重写。提示词里每条记录带 `[explicit]` / `[agent]` 标签：`[explicit]` 是用户明确要求，`[agent]` 是自动汇总或跨项目 digest 提炼的经验，按参考处理，冲突时 `[explicit]` 优先。store revision 变化后（显式写入与 consolidation 写入都会等待刷新；读取发现落后时也会后台补刷新），用该 Session 自己的 route 生成，写进该 scope 的 `summary.json`（`revision` / `generated_at` / `model` / `budget` / `content` / `signature`）。注入**只读缓存**，同步路径上不调用模型。摘要调用不设插件侧输出上限，沿用 provider 自己的上限；提示词给的是**正文预算**（`summaryBudgetBytes` 减去固定信封预留 600 字节）。正文超过预算时重新生成，最多 3 次；仍超出则按正文预算截断并记 `warn`，只有 `content` 会被截断。缓存的 `budget` 与当前配置不一致时视为过期：下一次读取重新生成。失败第一次记 `warn`，后续重试降到 `debug`，避免坏 route 刷屏。这个检查在每次生成之后、写缓存之前立即执行，不暴露独立命令。
+- **摘要由模型写。** score 不低于 `summaryMinScore`（默认 `0.5`）的 active 记录进入摘要候选，按 score 排序，而不是按更新时间；低于门槛的写入不进摘要，也不改变 signature，因此不会触发重写。提示词里每条记录带 `[explicit]` / `[agent]` 标签：`[explicit]` 是用户明确要求，`[agent]` 是自动汇总或跨项目 digest 提炼的经验，按参考处理，冲突时 `[explicit]` 优先。store revision 变化后（显式写入与 consolidation 写入都会等待刷新；读取发现落后时也会后台补刷新），用该 Session 自己的 route 生成，写进该 scope 的 `summary.json`（`revision` / `generated_at` / `model` / `budget` / `content` / `signature`）。注入**只读缓存**，同步路径上不调用模型。摘要调用不设插件侧输出上限，沿用 provider 自己的上限；提示词给的是**正文预算**（`summaryBudgetBytes` 减去固定信封预留 600 字节）。正文超过预算时重新生成，最多 3 次；仍超出则按正文预算截断并记 `warn`，只有 `content` 会被截断。缓存的 `budget` 与当前配置不一致时视为过期：下一次读取重新生成。失败第一次记 `warn`，后续重试降到 `debug`，避免坏 route 刷屏。这个检查在每次生成之后、写缓存之前立即执行，不暴露独立命令。
 - 缓存描述的 revision 落后时仍然注入 —— 过时的摘要优于没有摘要 —— 由后台刷新追上。
 - **按 Session 冻结。** 注入块在会话第一次请求时生成,之后保持不变:Memory 在会话进行中的更新只更新 `summary.json`,不改变这次会话已经注入的文本,因此 harness 不会为此追加新的 runtime-context 快照。只有收到 `compaction/end`(压缩重写了模型要重读的历史)或工作目录切到另一个项目时才重新生成;后台刷新在冻结期间照常执行,供下一次快照使用。
 - **没有实质变化时不重写。** 提示词把上一版摘要交给模型：记录没有实质变化时要求它逐字返回。缓存同时记录 active 记录（id + title + content）的 `signature`；revision 变了但 `signature` 没变（例如只更新了访问统计）时，刷新不调用模型，原样写回文本并推进 revision，注入文本逐字节不变。
@@ -853,7 +855,7 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 - [ ] `memory_remember` 支持显式 add / update(target_id) / supersede(target_id)
 - [ ] update / supersede 的 scope 继承 target
 - [ ] stale target 在 lock 内重验并 fail conflict
-- [ ] Phase 1 writer 固定 confidence=0.99（显式 update 为 0.95）；storage schema 允许 `[0,1]`
+- [ ] confidence 由证据（0.60）+ 陈述强度（0.40）算出，上限 0.99；所有写入路径同一套；storage schema 允许 `[0,1]`
 - [ ] provenance 由 host 生成，模型不能注入 evidence
 - [ ] evidence 绑定当前 turn；seq 不可得时留空而非猜
 - [ ] content 命中 secret → 拒绝；被引用源文本命中 → 截断前脱敏成 `[redacted]`，quote 不含凭据片段
@@ -966,12 +968,12 @@ dsh-reflection/*         → 内部事件：同上，另按命名空间排除（
 
 ```text
 计划读不出来（非对象 / operations 非数组）→ 整批失败，mark 不动
-单个操作站不住脚（目标无效、evidence 不实、改写低于置信度、命中 secret）→ 丢弃该操作并记原因，其余照常提交，窗口消费；低于置信度的 add 不拒绝，只影响它的初始 stability/priority
+单个操作站不住脚（目标无效、evidence 不实、改写低于目标置信度、add 与现有记录冲突、命中 secret）→ 丢弃该操作并记原因，其余照常提交，窗口消费；add 不因分值低被拒绝，只影响其 score
 ```
 
 `update` / `supersede` 的 scope **继承自目标记录**，模型给出的 scope 被忽略，因此一次改写不能把事实挪到另一个 project。
 
-改写门槛是**相对**的：新 confidence 低于目标记录的 confidence 时拒绝（`confidence-below-target`）；`add` 一律持久化并参与服务，置信度决定初始 `stability_days` 和 priority。
+改写门槛是**相对**的：算出的 confidence 低于目标记录的 confidence 时拒绝（`confidence-below-target`）；`add` 一律持久化并参与服务。consolidation 的提示词里，记忆快照（标题 + id，只有候选带正文）排在轨迹之前，形成可复用的稳定前缀，并减少每次调用的输入字节。
 
 ## P2-5. 提交与失败语义
 
@@ -1078,7 +1080,8 @@ Phase 1 的 secret writer-policy 同样适用于 Phase 2：新增文本（新 co
 - [ ] 人类轮次门禁生效；无人类轮次的窗口被消费且不调用模型
 - [ ] 模型只能提议 add / update / supersede / noop；删除类操作被拒
 - [ ] evidence seq 逐条核验；provenance 由插件构造
-- [ ] 低于目标 confidence 的改写被拒绝；add 一律落盘并参与服务
+- [ ] 低于目标 confidence 的改写被拒绝；add 与现有记录冲突时被拒绝；add 一律落盘并参与服务
+- [ ] 读取只记诊断，不改变 score；confirmed 增加生效次数并刷新时间；corrected 归档记录
 - [ ] update / supersede 的 scope 继承自目标
 - [ ] 提交复用 Phase 1 actions（同一锁、同一 secret 扫描、同一视图重建）
 - [ ] 成功 / NOOP / 仅 ignorable / 无人类轮次 → mark 前进

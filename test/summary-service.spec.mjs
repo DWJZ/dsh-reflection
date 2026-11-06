@@ -65,7 +65,7 @@ async function scene(chunks) {
     }),
     logger: { warn: message => warnings.push(String(message)), debug: message => debugs.push(String(message)) },
     summaryBudgetBytes: 2400,
-    summaryMinConfidence: 0.5,
+    summaryMinScore: 0.5,
     now: () => Date.parse('2026-10-29T00:00:00.000Z'),
   })
   return { root, layout, seen, warnings, debugs, service }
@@ -127,7 +127,7 @@ console.log('a different budget makes the cache stale')
     }),
     logger: { warn: () => {}, debug: () => {} },
     summaryBudgetBytes: budget,
-    summaryMinConfidence: 0.5,
+    summaryMinScore: 0.5,
     now: () => Date.parse('2026-10-29T00:00:00.000Z'),
   })
   await makeService(2400).refresh(agent)
@@ -166,7 +166,7 @@ console.log('a summary over the content budget is regenerated')
     }),
     logger: { warn: message => warnings.push(String(message)), debug: () => {} },
     summaryBudgetBytes: 800,
-    summaryMinConfidence: 0.5,
+    summaryMinScore: 0.5,
     now: () => Date.parse('2026-10-29T00:00:00.000Z'),
   })
   await service.refresh(agent)
@@ -204,7 +204,7 @@ console.log('a summary that never fits is truncated and warned')
     }),
     logger: { warn: message => warnings.push(String(message)), debug: () => {} },
     summaryBudgetBytes: 800,
-    summaryMinConfidence: 0.5,
+    summaryMinScore: 0.5,
     now: () => Date.parse('2026-10-29T00:00:00.000Z'),
   })
   await service.refresh(agent)

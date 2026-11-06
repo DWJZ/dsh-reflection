@@ -42,7 +42,7 @@ const CJK_RUN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud
  * @returns NFC-normalized, whitespace-collapsed, lowercased text.
  */
 /** What one search asks for. */
-import { priority } from './priority.js'
+import { score } from './priority.js'
 
 export interface SearchRequest {
   /** The text to look for. */
@@ -131,7 +131,7 @@ export function searchRecords(records: MemoryRecord[], request: SearchRequest) {
   const matches = visible
     .map((record: MemoryRecord) => ({ record, score: scoreRecord(record, query) }))
     .filter(match => match.score > 0)
-    .map(match => ({ ...match, score: match.score * (0.85 + 0.3 * priority(match.record, now)) }))
+    .map(match => ({ ...match, score: match.score * (0.85 + 0.3 * score(match.record, now)) }))
     .sort((left, right) => right.score - left.score
       || (left.record.updated_at === right.record.updated_at ? 0 : left.record.updated_at < right.record.updated_at ? 1 : -1)
       || (left.record.id < right.record.id ? -1 : 1))
