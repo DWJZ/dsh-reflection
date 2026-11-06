@@ -76,7 +76,10 @@ wrote Memory, the Session's own model is asked to describe what Memory holds, an
 the answer is cached in `summary.json` beside the records. The call receives the
 previous summary and returns it verbatim when nothing material changed; the cache
 also records a signature of the records, so a revision that only touched access
-statistics leaves the injected text byte for byte the same. The commit waits for
+statistics leaves the injected text byte for byte the same. The rendered block is
+frozen per Session: Memory changing mid-conversation does not append another
+runtime-context snapshot, and compaction (or a different project) is what
+refreshes it. The commit waits for
 that refresh, so the summary never describes Memory as it was before the call
 that just returned. Injection only reads the cache; it never calls a model. The
 summary call has no plugin-side output cap: it inherits the provider's own limit,

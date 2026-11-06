@@ -114,19 +114,23 @@ check('the summary carries no counts or dates',
 check('the summary points at the index file', rendered.includes('memories.json'))
 check('the summary does not carry the fact itself', !rendered.includes('用户偏好中文解释'))
 check('a bare assemble renders nothing', indexEntry.text({}) === '')
-// The assembled text is what a long conversation relies on: every request re-runs
-// this function, so a summary written after the first assembly still reaches the model.
+// The block is frozen for the Session: Memory changes while a conversation runs
+// must not append another runtime-context snapshot.
 writeSummaryDocument(userScope.summaryPath, {
   content: '用户在做 dsh-reflection。',
   revision: readStore(userScope.storePath).revision,
   generated_at: new Date().toISOString(),
   budget: resolveConfig(CONFIG).summaryBudgetBytes,
 })
-const reassembled = indexEntry.text({ agent: agentStub() })
-check('a later assemble sees the summary written after it',
-  reassembled.includes('用户在做 dsh-reflection。') && reassembled !== rendered)
-check('the summary stays inside its byte budget',
-  Buffer.byteLength(reassembled, 'utf8') <= resolveConfig(CONFIG).summaryBudgetBytes)
+const stillFrozen = indexEntry.text({ agent: agentStub() })
+check('a summary written after the first render does not change the block',
+  stillFrozen === rendered && !stillFrozen.includes('用户在做 dsh-reflection。'))
+// Compaction is the boundary where a Session re-reads its block.
+ctx.emit('session/event', { id: 'session-1', header: { id: 'session-1' } }, { type: 'compaction/end', data: {} })
+const afterCompaction = indexEntry.text({ agent: agentStub() })
+check('compaction refreshes the block', afterCompaction.includes('用户在做 dsh-reflection。'))
+check('the refreshed summary stays inside its byte budget',
+  Buffer.byteLength(afterCompaction, 'utf8') <= resolveConfig(CONFIG).summaryBudgetBytes)
 
 console.log('project Memory reaches the index')
 const projectAgent = agentStub('session-project', PROJECT_DIR)

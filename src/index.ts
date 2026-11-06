@@ -158,6 +158,16 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
   }
 
   /**
+   * The `<memory-summary>` block each Session was first sent.
+   *
+   * Memory keeps changing while a conversation runs. Re-rendering the block on
+   * every request would make the harness append a fresh runtime-context snapshot
+   * each time Memory changed. A Session keeps the block it started with until
+   * compaction, the next point where the model re-reads its history anyway.
+   */
+  const frozenSummaries = new Map<string, { text: string; projectId: string | null }>()
+
+  /**
    * Register the index and the tools.
    *
    * Both contribute to services a profile may not mount, so they are taken as an
@@ -169,9 +179,10 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
    */
   const mountRuntime = () => {
     if (runtimeFiber !== null) return
+    frozenSummaries.clear()
     runtimeFiber = ctx.inject(['systemPrompt', 'tools'], (scope) => {
       registerMemoryPolicy(scope)
-      registerMemorySummary(scope, (agent: MemoryAgent) => renderSummary(deps, agent))
+      registerMemorySummary(scope, (agent: MemoryAgent) => renderSummary(deps, agent, frozenSummaries))
       registerMemoryTools(scope, deps)
     })
   }
@@ -183,6 +194,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
   const unmountRuntime = async () => {
     const fiber = runtimeFiber
     runtimeFiber = null
+    frozenSummaries.clear()
     if (fiber !== null && typeof fiber?.dispose === 'function') await fiber.dispose()
   }
 
@@ -338,6 +350,9 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
       // `/memory consolidate`, which a person runs deliberately.
       const learningOnItsOwn = () => collecting() && settings.consolidation.autoCommit === true
       const disposeEvents = ctx.on('session/event', (session: MemorySession, event) => {
+        // A compaction rewrites the history the model re-reads, so the frozen
+        // block is refreshed at that boundary instead of on every request.
+        if (event.type === 'compaction/end') frozenSummaries.delete(session.id)
         if (collecting()) consolidation.observe(session, event)
       })
       const disposeStatus = ctx.on('agent/status', ({ agent, status }) => {
@@ -387,6 +402,11 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
  * older revision is served anyway — a slightly stale summary is worth far more
  * than a missing one — while a background refresh brings it up to date.
  *
+ * The rendered block is frozen per Session, so Memory changing while a
+ * conversation runs does not append another runtime-context snapshot: a Session
+ * sees the block it started with, refreshed once compaction rewrites the history
+ * the model re-reads.
+ *
  * A canonical read failure propagates rather than degrading to an empty summary.
  * `memories.json` is the source of truth, so a store that violates its own
  * schema is a fault to report, not a Memory that happens to be empty: swallowing
@@ -394,18 +414,27 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
  * harder to diagnose than a turn that names the broken file.
  * @param deps - resolved settings and layouts.
  * @param agent - the agent whose request is being assembled.
+ * @param frozen - the block each Session already received, keyed by Session id.
  * @returns the summary text, or an empty string when there is nothing to inject.
  * @throws when a canonical store cannot be read or violates its schema.
  */
-function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
+function renderSummary(
+  deps: MemoryDeps,
+  agent: MemoryAgent,
+  frozen: Map<string, { text: string; projectId: string | null }>,
+) {
   const project = deps.projectFor(agent)
+  const projectId = project?.project_id ?? null
+  const sessionId = agent.session.id
   const userStore = readStore(deps.scopes.user.storePath)
   const projectLayout = project === null ? undefined : deps.scopes.project(project.project_id)
   const projectStore = projectLayout === undefined ? undefined : readStore(projectLayout.storePath)
   const userRecords = activeRecords(userStore.records)
   const projectRecords = projectStore === undefined ? [] : activeRecords(projectStore.records)
-  if (userRecords.length === 0 && projectRecords.length === 0) return ''
 
+  // The refresh keeps the cache current for the next snapshot. It must run even
+  // while this Session serves a frozen block, or the block taken after
+  // compaction would be as old as the one it replaces.
   const userSummary = readSummaryDocument(deps.scopes.user.summaryPath)
   const projectSummary = projectLayout === undefined ? undefined : readSummaryDocument(projectLayout.summaryPath)
   const budget = deps.config.summaryBudgetBytes
@@ -413,18 +442,32 @@ function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
     || (projectStore !== undefined && summaryIsStale(projectSummary, projectStore.revision, budget))
   if (stale) deps.refreshSummary?.(agent)
 
+  // A Session keeps the block it was first sent. Memory changing mid-conversation
+  // must not append another runtime-context snapshot; the frozen block is replaced
+  // only when the Session starts (no entry) or compaction drops the entry.
+  const held = frozen.get(sessionId)
+  if (held !== undefined && held.projectId === projectId) return held.text
+
+  if (userRecords.length === 0 && projectRecords.length === 0) {
+    // An empty block is frozen too: a Session that started with nothing to
+    // describe keeps that state until its next compaction.
+    frozen.set(sessionId, { text: '', projectId })
+    return ''
+  }
+
   const parts: string[] = []
   if (userSummary !== undefined) parts.push(`user: ${userSummary.content.trim()}`)
   if (projectSummary !== undefined) parts.push(`project: ${projectSummary.content.trim()}`)
-  const summaryText = parts.join('\n\n')
-  return renderMemorySummary({
-    summaryText,
+  const text = renderMemorySummary({
+    summaryText: parts.join('\n\n'),
     paths: {
       user: deps.scopes.user.storePath,
       ...projectLayout === undefined ? {} : { project: projectLayout.storePath },
     },
     budgetBytes: deps.config.summaryBudgetBytes,
   })
+  frozen.set(sessionId, { text, projectId })
+  return text
 }
 
 /**

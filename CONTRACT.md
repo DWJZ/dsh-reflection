@@ -687,6 +687,7 @@ the index lists every record by title and id; each record has its own file under
 - **不注入任何一条记录的正文。** envelope 只含：固定 notice、两个 `memories.json` 的绝对路径，以及指向 `memories/<id>.md` 的说明。它不含计数、日期或时间戳：这些值随每次写入变化，会让注入文本在一次什么都没学到的整理之后也发生变化。
 - **摘要由模型写。** 所有 active 记录都进入摘要候选，按 `priority`（confidence + 幂律衰减）排序，而不是按更新时间。提示词里每条记录带 `[explicit]` / `[agent]` 标签：`[explicit]` 是用户明确要求，`[agent]` 是自动汇总或跨项目 digest 提炼的经验，按参考处理，冲突时 `[explicit]` 优先。store revision 变化后（显式写入与 consolidation 写入都会等待刷新；读取发现落后时也会后台补刷新），用该 Session 自己的 route 生成，写进该 scope 的 `summary.json`（`revision` / `generated_at` / `model` / `budget` / `content` / `signature`）。注入**只读缓存**，同步路径上不调用模型。摘要调用不设插件侧输出上限，沿用 provider 自己的上限；提示词给的是**正文预算**（`summaryBudgetBytes` 减去固定信封预留 600 字节）。正文超过预算时重新生成，最多 3 次；仍超出则按正文预算截断并记 `warn`，只有 `content` 会被截断。缓存的 `budget` 与当前配置不一致时视为过期：下一次读取重新生成。失败第一次记 `warn`，后续重试降到 `debug`，避免坏 route 刷屏。这个检查在每次生成之后、写缓存之前立即执行，不暴露独立命令。
 - 缓存描述的 revision 落后时仍然注入 —— 过时的摘要优于没有摘要 —— 由后台刷新追上。
+- **按 Session 冻结。** 注入块在会话第一次请求时生成,之后保持不变:Memory 在会话进行中的更新只更新 `summary.json`,不改变这次会话已经注入的文本,因此 harness 不会为此追加新的 runtime-context 快照。只有收到 `compaction/end`(压缩重写了模型要重读的历史)或工作目录切到另一个项目时才重新生成;后台刷新在冻结期间照常执行,供下一次快照使用。
 - **没有实质变化时不重写。** 提示词把上一版摘要交给模型：记录没有实质变化时要求它逐字返回。缓存同时记录 active 记录（id + title + content）的 `signature`；revision 变了但 `signature` 没变（例如只更新了访问统计）时，刷新不调用模型，原样写回文本并推进 revision，注入文本逐字节不变。
 - **固定部分永不为了腾地方而裁掉**：超 `summaryBudgetBytes` 时先裁模型写的那段（按 UTF-8 字节切，不劈开字符，末尾补 `…`）。连固定部分都放不下时整个 envelope 为 `''`。
 - 两个 scope 都没有 active 记录时不注入。

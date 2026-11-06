@@ -64,7 +64,7 @@ the index lists every record by title and id; each record has its own file under
 </memory-summary>
 ```
 
-摘要正文由模型写：每次写入后（以及 consolidation 之后的下一次读取时）会让会话自己的模型描述 Memory 里有什么，答案缓存在记录旁的 `summary.json`。这次调用会带上上一版摘要：记录没有实质变化时模型逐字返回它；缓存同时记录 active 记录的 signature，只有访问统计变化时不重写，注入文本逐字节不变。写入会等待这次刷新，所以摘要不会描述刚返回的那次调用之前的状态；注入只读缓存，自己从不调用模型。
+摘要正文由模型写：每次写入后（以及 consolidation 之后的下一次读取时）会让会话自己的模型描述 Memory 里有什么，答案缓存在记录旁的 `summary.json`。这次调用会带上上一版摘要：记录没有实质变化时模型逐字返回它；缓存同时记录 active 记录的 signature，只有访问统计变化时不重写，注入文本逐字节不变。注入块按 Session 冻结：会话进行中的记忆更新不会追加新的 runtime-context 快照，只有压缩（或切到另一个项目）才会刷新它。写入会等待这次刷新，所以摘要不会描述刚返回的那次调用之前的状态；注入只读缓存，自己从不调用模型。
 
 缓存是 JSON：`{ revision, generated_at, model, budget, content }`。只有
 `content` 受预算约束，metadata 是来源信息、不会被截断。提示词给模型的是正文预算
