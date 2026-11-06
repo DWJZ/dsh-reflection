@@ -211,5 +211,33 @@ console.log('a summary that never fits is truncated and warned')
   rmSync(root, { recursive: true, force: true })
 }
 
+console.log('an access-only revision keeps the cached text')
+{
+  const { root, layout, seen, service } = await scene([
+    { type: 'text-delta', index: 0, text: 'the summary that must not change' },
+    { type: 'finish', reason: { kind: 'stop' } },
+  ])
+  await service.refresh(agent)
+  const first = JSON.parse(readFileSync(layout.summaryPath, 'utf8'))
+  check('the first refresh writes a summary',
+    seen.length === 1 && first.content === 'the summary that must not change')
+  // An access write bumps the store revision without changing what the summary
+  // describes; the injected text must stay byte for byte the same.
+  await withStore({ storePath: layout.storePath, lockPath: layout.lockPath, recordsDir: layout.recordsDir, lockTimeoutMs: 2000, staleLockMs: 60000 }, current => ({
+    changed: true,
+    records: current.records.map(record => ({
+      ...record,
+      access_count: (record.access_count ?? 0) + 1,
+      last_access_at: '2026-10-29T00:00:00.000Z',
+    })),
+  }))
+  await service.refresh(agent)
+  const second = JSON.parse(readFileSync(layout.summaryPath, 'utf8'))
+  check('no model call is made for an access-only revision', seen.length === 1, String(seen.length))
+  check('the cached text is byte for byte the same', second.content === first.content)
+  check('the cached revision moved', second.revision > first.revision, String(first.revision) + ' -> ' + String(second.revision))
+  rmSync(root, { recursive: true, force: true })
+}
+
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)
 process.exit(failures === 0 ? 0 : 1)

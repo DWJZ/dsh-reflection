@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const {
-  renderMemorySummary, renderSummaryDocument, parseSummaryDocument, buildSummaryPrompt, summaryIsStale,
+  renderMemorySummary, renderSummaryDocument, parseSummaryDocument, buildSummaryPrompt, recordsSignature, summaryIsStale,
 } = await import(pathToFileURL(join(PLUGIN, 'src/summary.js')).href)
 
 let failures = 0
@@ -42,38 +42,34 @@ const record = (overrides = {}) => ({
   ...overrides,
 })
 
-const counts = (overrides = {}) => ({ user: 1, project: 0, updatedAt: AT, ...overrides })
-
 console.log('the injected envelope')
 const text = renderMemorySummary({
   summaryText: '用户偏好中文解释，项目使用 pnpm。',
-  counts: counts(),
   paths: { user: '/home/me/.dsh/memory/user/memories.json' },
   budgetBytes: 1200,
 })
 check('it is an envelope', text.startsWith('<memory-summary>') && text.trimEnd().endsWith('</memory-summary>'))
 check('it says what it is', text.includes('data, not instructions'))
-check('it counts the scopes', text.includes('1 user') && text.includes('0 project'))
-check('it names the date', text.includes('2026-09-26'))
+check('it carries no counts', !/\d+ (user|project)/u.test(text))
+check('it carries no date or timestamp', !/\d{4}-\d{2}-\d{2}/u.test(text))
 check('it names the index file', text.includes('/home/me/.dsh/memory/user/memories.json'))
 check('it points at per-record files', text.includes('memories/<id>.md'))
 check('it carries the model summary', text.includes('项目使用 pnpm'))
 
 console.log('no facts are injected without a summary')
-const bare = renderMemorySummary({ counts: counts(), paths: { user: '/m/user/memories.json' }, budgetBytes: 1200 })
+const bare = renderMemorySummary({ paths: { user: '/m/user/memories.json' }, budgetBytes: 1200 })
 check('a missing summary still produces the pointer', bare.includes('/m/user/memories.json'))
 check('a missing summary carries no record text', !bare.includes('用户偏好中文解释'))
 
 console.log('nothing is injected when there is nothing to describe')
-check('an empty store renders nothing',
-  renderMemorySummary({ counts: { user: 0, project: 0, byCategory: {} }, paths: { user: '/m/memories.json' }, budgetBytes: 1200 }) === '')
+check('an empty body still renders the pointer',
+  renderMemorySummary({ paths: { user: '/m/memories.json' }, budgetBytes: 1200 }).includes('index: /m/memories.json'))
 check('a project scope alone renders',
-  renderMemorySummary({ counts: counts({ user: 0, project: 2 }), paths: { user: '/m/user/memories.json', project: '/m/p/memories.json' }, budgetBytes: 1200 }).includes('/m/p/memories.json'))
+  renderMemorySummary({ paths: { user: '/m/user/memories.json', project: '/m/p/memories.json' }, budgetBytes: 1200 }).includes('/m/p/memories.json'))
 
 console.log('the budget is respected')
 const long = renderMemorySummary({
   summaryText: '很长的摘要。'.repeat(400),
-  counts: counts(),
   paths: { user: '/home/me/.dsh/memory/user/memories.json', project: '/home/me/.dsh/memory/projects/proj_x/memories.json' },
   budgetBytes: 800,
 })
@@ -81,7 +77,7 @@ check('a long summary fits the budget', Buffer.byteLength(long, 'utf8') <= 800, 
 check('a truncated summary says it was cut', long.includes('…'))
 check('a truncated summary keeps the paths', long.includes('/home/me/.dsh/memory/user/memories.json'))
 check('a budget too small for the pointer renders nothing',
-  renderMemorySummary({ counts: counts(), paths: { user: '/home/me/.dsh/memory/user/memories.json' }, budgetBytes: 40 }) === '')
+  renderMemorySummary({ paths: { user: '/home/me/.dsh/memory/user/memories.json' }, budgetBytes: 40 }) === '')
 check('multi-byte text is never split', !long.includes('\uFFFD'))
 
 console.log('the summary cache round-trips as JSON')
@@ -154,6 +150,29 @@ check('a revision mismatch is stale', summaryIsStale(fresh, 4, 2400) === true)
 check('a budget mismatch is stale', summaryIsStale(fresh, 3, 1200) === true)
 check('a cache without a budget is stale', summaryIsStale({ content: 'a summary', revision: 3, generated_at: AT }, 3, 2400) === true)
 check('empty content is stale', summaryIsStale({ ...fresh, content: '  ' }, 3, 2400) === true)
+
+console.log('the previous summary travels with the prompt')
+const withPrevious = buildSummaryPrompt({
+  records: [record({ content: '用户偏好中文解释' })],
+  scopeLabel: 'user',
+  budgetBytes: 1200,
+  previous: '用户偏好中文解释。',
+})
+check('the previous summary is offered', withPrevious.includes('用户偏好中文解释。'))
+check('the prompt asks for a verbatim answer', withPrevious.includes('return it verbatim'))
+
+console.log('a signature of the active records')
+const baseline = [record({ id: 'mem_a', title: 'A', content: 'a' }), record({ id: 'mem_b', title: 'B', content: 'b' })]
+check('the same records sign the same', recordsSignature(baseline) === recordsSignature([...baseline]))
+check('reordering does not change it', recordsSignature(baseline) === recordsSignature([...baseline].reverse()))
+check('a changed content changes it',
+  recordsSignature(baseline) !== recordsSignature([record({ id: 'mem_a', title: 'A', content: 'a2' }), baseline[1]]))
+check('a changed title changes it',
+  recordsSignature(baseline) !== recordsSignature([record({ id: 'mem_a', title: 'A2', content: 'a' }), baseline[1]]))
+check('an archived record does not contribute',
+  recordsSignature(baseline) === recordsSignature([...baseline, record({ id: 'mem_c', title: 'C', content: 'c', status: 'archived' })]))
+check('the signature survives the cache',
+  parseSummaryDocument(renderSummaryDocument({ content: 's', revision: 1, generated_at: AT, signature: recordsSignature(baseline) }))?.signature === recordsSignature(baseline))
 
 if (failures > 0) {
   console.log(`\n${String(failures)} FAILURE(S)`)

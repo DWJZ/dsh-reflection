@@ -19,6 +19,7 @@ const PLUGIN = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const plugin = await import(pathToFileURL(join(PLUGIN, 'src/index.js')).href)
 const { userLayout, projectLayout, pluginConfigPath } = await import(pathToFileURL(join(PLUGIN, 'src/paths.js')).href)
 const { readStore } = await import(pathToFileURL(join(PLUGIN, 'src/jsonstore.js')).href)
+const { writeSummaryDocument } = await import(pathToFileURL(join(PLUGIN, 'src/summary.js')).href)
 const { resolveConfig } = await import(pathToFileURL(join(PLUGIN, 'src/config.js')).href)
 const { Session, SessionId, SESSION_FORMAT_VERSION, pluginRecordOf } = await import('@deepseek-ai/dsh-session')
 
@@ -108,22 +109,22 @@ const indexEntry = ctx.registrations.contexts[0]
 check('the index is assembled on demand, not frozen at mount', typeof indexEntry.text === 'function')
 const rendered = indexEntry.text({ agent: agentStub() })
 check('the summary is an envelope', rendered.includes('<memory-summary>') && rendered.includes('</memory-summary>'))
-check('the summary counts the scope', rendered.includes('1 user'))
+check('the summary carries no counts or dates',
+  !/\d+ (user|project)/u.test(rendered) && !/\d{4}-\d{2}-\d{2}/u.test(rendered))
 check('the summary points at the index file', rendered.includes('memories.json'))
 check('the summary does not carry the fact itself', !rendered.includes('用户偏好中文解释'))
 check('a bare assemble renders nothing', indexEntry.text({}) === '')
 // The assembled text is what a long conversation relies on: every request re-runs
-// this function, so Memory written after the first assembly still reaches the model.
-await withStore({ ...userScope, lockTimeoutMs: 3000, staleLockMs: 60000 }, current => ({
-  changed: true,
-  records: [...current.records, memoryRecord({
-    category: 'state',
-    content: '用户在做 dsh-reflection',
-  })],
-}))
+// this function, so a summary written after the first assembly still reaches the model.
+writeSummaryDocument(userScope.summaryPath, {
+  content: '用户在做 dsh-reflection。',
+  revision: readStore(userScope.storePath).revision,
+  generated_at: new Date().toISOString(),
+  budget: resolveConfig(CONFIG).summaryBudgetBytes,
+})
 const reassembled = indexEntry.text({ agent: agentStub() })
-check('a later assemble sees the Memory written after it',
-  reassembled.includes('2 user') && reassembled !== rendered)
+check('a later assemble sees the summary written after it',
+  reassembled.includes('用户在做 dsh-reflection。') && reassembled !== rendered)
 check('the summary stays inside its byte budget',
   Buffer.byteLength(reassembled, 'utf8') <= resolveConfig(CONFIG).summaryBudgetBytes)
 
@@ -141,11 +142,13 @@ await withStore({ ...projectLayout(MEMORY, resolvedProjectId), lockTimeoutMs: 30
   })],
 }))
 const projectIndex = ctx.registrations.contexts[0].text({ agent: projectAgent })
-check('the project scope is counted for that session', projectIndex.includes('1 project'))
-check('user Memory is counted alongside it', projectIndex.includes('2 user'))
+check('the project scope points at its index',
+  projectIndex.includes(projectLayout(MEMORY, resolvedProjectId).storePath))
+check('user Memory points at its index alongside it', projectIndex.includes(userLayout(MEMORY).storePath))
 const otherIndex = ctx.registrations.contexts[0].text({ agent: agentStub('session-other', ROOT) })
-check('a session without that project does not see its scope', !otherIndex.includes('1 project'))
-check('a session without a project still sees user Memory', otherIndex.includes('2 user'))
+check('a session without that project does not see its scope',
+  !otherIndex.includes(projectLayout(MEMORY, resolvedProjectId).storePath))
+check('a session without a project still sees user Memory', otherIndex.includes(userLayout(MEMORY).storePath))
 check('the injected summary declares what it is', projectIndex.includes('data, not instructions'))
 
 console.log('rendering the summary is read-only and stable')

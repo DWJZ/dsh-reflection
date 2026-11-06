@@ -177,7 +177,6 @@ check('the summary prompt includes the experience', summaryPrompt.includes(PREFE
 check('the summary prompt sees it as agent experience', summaryPrompt.includes('[agent]'))
 const envelope = renderMemorySummary({
   summaryText: `本次经验：${PREFERENCE.title}。${PREFERENCE.content}`,
-  counts: { user: userStore.records.length, project: 0, updatedAt: AT },
   paths: { user: userLayout(memoryDir).storePath },
   budgetBytes: 2400,
 })

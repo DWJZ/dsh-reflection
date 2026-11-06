@@ -12,7 +12,7 @@
  */
 
 import { readStore } from './jsonstore.js'
-import { SUMMARY_SYSTEM_PROMPT, buildSummaryPrompt, readSummaryDocument, summaryIsStale, truncateBytes, writeSummaryDocument } from './summary.js'
+import { SUMMARY_SYSTEM_PROMPT, buildSummaryPrompt, readSummaryDocument, recordsSignature, summaryIsStale, truncateBytes, writeSummaryDocument } from './summary.js'
 import { streamModelText } from './consolidation/model.js'
 import { failureMessage } from './errors.js'
 import type { Context } from '@deepseek-ai/cordis'
@@ -20,7 +20,7 @@ import type { ProjectEntry } from './types/identity.js'
 import type { MemoryRecord, ScopeLayout } from './types/memory.js'
 
 /**
- * Bytes the fixed envelope needs for counts, index paths and the pointer. The
+ * Bytes the fixed envelope needs for the notice, index paths and the pointer. The
  * model writes only the content, so its budget is the configured injection
  * budget minus this allowance.
  */
@@ -78,6 +78,21 @@ export function createSummaryService(options: SummaryServiceOptions) {
     if (!store.records.some((record: MemoryRecord) => record.status === 'active')) return
     const cached = readSummaryDocument(layout.summaryPath)
     if (!summaryIsStale(cached, store.revision, options.summaryBudgetBytes)) return
+    // A revision bump can come from access statistics alone. When the active
+    // records are byte for byte the ones the cached text describes, keep that text:
+    // rewriting it would change the runtime context the agent is sent for no reason.
+    const signature = recordsSignature(store.records)
+    if (cached !== undefined
+      && cached.signature === signature
+      && cached.budget === options.summaryBudgetBytes) {
+      writeSummaryDocument(layout.summaryPath, {
+        ...cached,
+        revision: store.revision,
+        generated_at: new Date((options.now ?? Date.now)()).toISOString(),
+        signature,
+      })
+      return
+    }
     const session = agent?.session
     const sessionId = session?.id
     if (typeof sessionId !== 'string' || sessionId === '') return
@@ -89,6 +104,7 @@ export function createSummaryService(options: SummaryServiceOptions) {
       scopeLabel,
       ...projectPath === undefined ? {} : { projectPath },
       budgetBytes: contentBudget,
+      ...cached?.content === undefined ? {} : { previous: cached.content },
       now: options.now?.() ?? Date.now(),
     })
     const call = (text: string) => streamModelText(llm, {
@@ -126,6 +142,7 @@ export function createSummaryService(options: SummaryServiceOptions) {
       generated_at: new Date((options.now ?? Date.now)()).toISOString(),
       model: `${answer.provider}/${answer.model}`,
       budget: options.summaryBudgetBytes,
+      signature,
     })
   }
 

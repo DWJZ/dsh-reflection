@@ -413,21 +413,12 @@ function renderSummary(deps: MemoryDeps, agent: MemoryAgent) {
     || (projectStore !== undefined && summaryIsStale(projectSummary, projectStore.revision, budget))
   if (stale) deps.refreshSummary?.(agent)
 
-  let updatedAt = ''
-  for (const record of [...userRecords, ...projectRecords]) {
-    if (record.updated_at > updatedAt) updatedAt = record.updated_at
-  }
   const parts: string[] = []
   if (userSummary !== undefined) parts.push(`user: ${userSummary.content.trim()}`)
   if (projectSummary !== undefined) parts.push(`project: ${projectSummary.content.trim()}`)
   const summaryText = parts.join('\n\n')
   return renderMemorySummary({
     summaryText,
-    counts: {
-      user: userRecords.length,
-      project: projectRecords.length,
-      ...updatedAt === '' ? {} : { updatedAt },
-    },
     paths: {
       user: deps.scopes.user.storePath,
       ...projectLayout === undefined ? {} : { project: projectLayout.storePath },
