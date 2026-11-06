@@ -30,10 +30,11 @@ import { accessUpdate, initialStability, stabilityDays } from './priority.js'
  * Confidence of a record the user asked for directly.
  *
  * An explicit request is not a judgement about how likely a fact is; the user
- * said it, so it is certain. Automatic consolidation supplies its own value,
- * which is the model's estimate of how well the trajectory grounds the fact.
+ * said it, so it is treated as near-certain — 0.99, not a claim that no later
+ * trajectory could contradict it. Automatic consolidation supplies its own
+ * value, which is the model's estimate of how well the trajectory grounds it.
  */
-export const PHASE1_CONFIDENCE = 1.0
+export const PHASE1_CONFIDENCE = 0.99
 
 /**
  * Confidence of a record the user restated.
@@ -69,7 +70,7 @@ function requireConfidence(value: unknown, fallback: number) {
  * @param input.category - the chosen category.
  * @param input.projectId - the project, required for project scope.
  * @param input.evidence - provenance the host built from the current turn.
- * @returns the applied action and the affected id.
+ * @returns the applied action, the affected id, and the confidence it stored.
  */
 export async function addMemory(options: ActionOptions, input: AddInput) {
   const layout = requireLayout(options, input.scope, input.projectId)
@@ -79,7 +80,7 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
   if (screened !== undefined) return noop(`secret-detected:${screened}`)
 
   // Two branches return different results, so the result type is stated here.
-  return apply<{ action: string; id: string; reason?: string }>(options, layout, (store: MemoryStore) => {
+  return apply<{ action: string; id: string; reason?: string; confidence?: number }>(options, layout, (store: MemoryStore) => {
     // The effective project is what the record will store, so a user-scope write
     // compares against other user-scope records rather than a project's.
     const projectId = input.scope === 'project' ? input.projectId : null
@@ -87,7 +88,12 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
       && record.scope === input.scope
       && record.project_id === projectId
       && normalizeContent(record.content) === normalizeContent(content))
-    if (duplicate !== undefined) return { changed: false, result: { action: 'noop', id: duplicate.id, reason: 'duplicate' } }
+    if (duplicate !== undefined) {
+      return {
+        changed: false,
+        result: { action: 'noop', id: duplicate.id, reason: 'duplicate', confidence: duplicate.confidence },
+      }
+    }
 
     const at = nowIso(options)
     const confidence = requireConfidence(input.confidence, PHASE1_CONFIDENCE)
@@ -113,7 +119,11 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
       feedback_corrected: 0,
     }
     validateMemory(record, { maxEvidencePerMemory: options.maxEvidencePerMemory })
-    return { changed: true, records: [...store.records, record], result: { action: 'added', id: record.id } }
+    return {
+      changed: true,
+      records: [...store.records, record],
+      result: { action: 'added', id: record.id, confidence: record.confidence },
+    }
   })
 }
 
@@ -125,7 +135,7 @@ export async function addMemory(options: ActionOptions, input: AddInput) {
  * @param input.content - the restated fact.
  * @param input.projectId - the current project, used to decide visibility.
  * @param input.evidence - provenance the host built from the current turn.
- * @returns the applied action and the record id.
+ * @returns the applied action, the record id, and the confidence it stored.
  */
 export async function updateMemory(options: ActionOptions, input: TargetedInput) {
   const located = locateVisible(options, input.id, input.projectId)
@@ -150,7 +160,7 @@ export async function updateMemory(options: ActionOptions, input: TargetedInput)
     return {
       changed: true,
       records: store.records.map((entry: MemoryRecord) => entry.id === record.id ? record : entry),
-      result: { action: 'updated', id: record.id },
+      result: { action: 'updated', id: record.id, confidence: record.confidence },
     }
   })
 }
@@ -163,7 +173,7 @@ export async function updateMemory(options: ActionOptions, input: TargetedInput)
  * @param input.content - the newer fact.
  * @param input.projectId - the current project, used to decide visibility.
  * @param input.evidence - provenance the host built from the current turn.
- * @returns the applied action, the new id, and the retired id.
+ * @returns the applied action, the new id, the retired id, and the stored confidence.
  */
 export async function supersedeMemory(options: ActionOptions, input: TargetedInput) {
   const located = locateVisible(options, input.id, input.projectId)
@@ -205,7 +215,7 @@ export async function supersedeMemory(options: ActionOptions, input: TargetedInp
     return {
       changed: true,
       records: [...store.records.map((entry: MemoryRecord) => entry.id === retired.id ? retired : entry), replacement],
-      result: { action: 'superseded', id: replacement.id, superseded_id: retired.id },
+      result: { action: 'superseded', id: replacement.id, superseded_id: retired.id, confidence },
     }
   })
 }

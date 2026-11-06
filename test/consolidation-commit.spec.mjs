@@ -223,9 +223,9 @@ const explicit = await commitOperations(OPTIONS, [{
   projectId: undefined,
   evidence: provenance([404]),
 }])
-check('a write with no stated confidence is certain',
+check('a write with no stated confidence takes the explicit value',
   explicit.committed.add === 1
-  && userRecords().find(record => record.content === 'A fact the user asked for.')?.confidence === 1)
+  && userRecords().find(record => record.content === 'A fact the user asked for.')?.confidence === 0.99)
 const badScore = await commitOperations(OPTIONS, [{ ...addition({ content: 'bad score' }), confidence: 2 }])
 check('an unusable confidence is reported as a failure',
   badScore.failures.length === 1 && String(badScore.failures[0].message).includes('confidence'),

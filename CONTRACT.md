@@ -143,7 +143,7 @@ Memory 的物理位置不可配置：内部恒为 `path.join(resolvedDshHome, 'm
   "title": "该项目使用 pnpm 管理依赖",
   "content": "该项目使用 pnpm",
 
-  "confidence": 1.0,
+  "confidence": 0.99,
 
   "evidence": [
     {
@@ -175,9 +175,9 @@ ID 用 `crypto.randomUUID()` 加前缀：`mem_<uuid>`、`proj_<uuid>`。不自�
 
 ### 5.1 Confidence
 
-Storage schema 允许 `confidence ∈ [0, 1]`。Phase 1 writer **永远写 1.0**：
+Storage schema 允许 `confidence ∈ [0, 1]`。Phase 1 writer 写固定值：
 
-- `memory_remember` 不接受 `confidence` 参数，显式写入的记录一律 `1.0`（用户直接要求的事实不是概率判断）；
+- `memory_remember` 不接受 `confidence` 参数，显式写入的记录一律 `0.99`（用户直接要求的事实接近确定，但不是"不可能被后续轨迹推翻"）；
 - **Phase 2 的自动写入持久化 reviewed 置信度**：ADD / SUPERSEDE 用模型给的值，UPDATE 把它写进被改写的记录。
 - **confidence 只用于两处**：新记录的初始 stability；以及改写门槛 —— `update`/`supersede` 要求新 confidence **不低于目标记录的 confidence**，否则拒绝（`confidence-below-target`）。`add` 一律写入并参与服务，confidence 低只影响它的 stability/priority。
 
@@ -198,7 +198,7 @@ feedback_confirmed / feedback_corrected / last_feedback_at
 - **反馈**：consolidation 的同一次调用可以返回 `feedback: [{target_id, verdict}]`，只允许本轮窗口里出现过的 id；`confirmed` 使 `stability × ease`、`ease + 0.1`，`corrected` 使 `stability × 0.5`、`ease - 0.2`，`neutral` 不变。audit 记录每个 verdict 的 id 列表，不存正文。
 - **排序**：摘要提示词按 priority 排序；`memory_search` 用 `relevance × (0.85 + 0.3 × priority)` 重排，所有 confidence 的 active 记录都参与。
 - 不做删除/降级：低 priority 只是排后面。
-- **显式 update 写入 `0.95`**（`EXPLICIT_UPDATE_CONFIDENCE`），既不沿用被改写记录的旧值，也不自称为 `1.0`：用户重申了内容，所以他确定；但这条记录是在别人的判断之上被修正的，不是他直接新建的；
+- **显式 update 写入 `0.95`**（`EXPLICIT_UPDATE_CONFIDENCE`），既不沿用被改写记录的旧值，也不自称为 `0.99`：用户重申了内容，所以他确定；但这条记录是在别人的判断之上被修正的，不是他直接新建的；
 - Phase 1 ranking 不使用 confidence；
 - canonical 中 `[0, 1]` 都是合法 schema（不是只有 1.0）；
 - Phase 2 的 automatic consolidation 可直接写 `< 1.0`，不需要升级 schema。
@@ -360,6 +360,8 @@ Phase 1 不承诺通用 PII detector，只在 prompt 与文档层面要求不主
 | `supersede` | `target_id`, `content`, `title` | `scope` | 同上 |
 
 update / supersede 不允许模型再传 scope，避免矛盾参数。
+
+三个写入模式的结果都带 `confidence`：`add` 与 `supersede` 为 `0.99`，`update` 为 `0.95`；`duplicate` 造成的 `noop` 带被命中记录已有的 confidence。
 
 ### 8.2 Exact duplicate
 
@@ -851,7 +853,7 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 - [ ] `memory_remember` 支持显式 add / update(target_id) / supersede(target_id)
 - [ ] update / supersede 的 scope 继承 target
 - [ ] stale target 在 lock 内重验并 fail conflict
-- [ ] Phase 1 writer 固定 confidence=1.0；storage schema 允许 `[0,1]`
+- [ ] Phase 1 writer 固定 confidence=0.99（显式 update 为 0.95）；storage schema 允许 `[0,1]`
 - [ ] provenance 由 host 生成，模型不能注入 evidence
 - [ ] evidence 绑定当前 turn；seq 不可得时留空而非猜
 - [ ] content 命中 secret → 拒绝；被引用源文本命中 → 截断前脱敏成 `[redacted]`，quote 不含凭据片段
