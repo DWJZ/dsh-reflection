@@ -93,6 +93,7 @@ Memory 的物理位置不可配置：内部恒为 `path.join(resolvedDshHome, 'm
 | `dshHome` | string | `$DSH_HOME` / `~/.dsh` | 非空 |
 | `summaryBudgetBytes` | number | `2400` | `>= 0`（注入摘要的 UTF-8 字节上限；摘要调用会被告知这个数字） |
 | `summaryMinScore` | number | `0.5` | `[0, 1]`（摘要只描述 score 不低于该值的记录；低于它的写入不会改变摘要文本，也不会触发重写） |
+| `autoDigest` | boolean | `true` | — （每天北京时间 00:00 自动跑一次跨项目 digest；关闭后只能手动执行命令） |
 | `retrievalTopK` | number | `8` | `>= 1` |
 | `projectRootMarkers` | string[] | `['.git']` | 非空字符串项。**必须与 `@deepseek-ai/dsh-agent-instructions` 的 `projectRootMarkers` 一致** —— harness 用它决定项目根（指令文件的范围），Memory 用它决定项目身份。本地插件无法读取对方的已解析配置，所以两者靠"同名字段 + 同默认值 + 一起改"保持同步 |
 | `lockTimeoutMs` | number | `10000` | `> 0` |
@@ -761,8 +762,9 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 - `clear` 无 `--yes` 时只报告将删除的条数；
 - `/memory` 命令**永远注册**，不受 `enabled` 影响。
 
-### 16.1 跨项目 digest（手动）
+### 16.1 跨项目 digest（自动 + 手动）
 
+- **自动触发**：进程启动时按北京时间（UTC+8）的下一个 00:00 排一个定时器，每天一次。到点后若插件开启且 `consolidation.enabled` 为 true，就用最近见到的 Session 的 route 跑一次扫描；没有已知 Session（进程启动后还没出现过 agent）或已有未处理的 pending 时跳过并记 `info`，不报错。定时器在宿主进程里，那一晚宿主没运行就错过了。自动运行**只扫描、不 apply**。`autoDigest: false` 只关闭自动运行，手动命令不受影响。
 - **输入**：`digest/state.json` 里 `lastScanAt` 之后生成的 project `summary.json`；没有 checkpoint 时取过去 24 小时；`--force` 取全部。
 - **两阶段**：第一次给 summary + 记录索引（id + title），模型返回要展开的 id；第二次给这些记录的正文。展开条数不设上限。
 - **输出**：只写 `digest/pending.json` 与 `pending.md`，**不写 Memory**；pending 成功写出后才推进 `lastScanAt`。

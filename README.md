@@ -131,7 +131,7 @@ its own initiative, before work that may have been done before.
 
 `forget` deletes outright and leaves only a tombstone that carries no content. `archive` keeps the record and takes it out of the index. `list` may truncate and says how many rows remain; `export` never truncates — it fails with guidance instead.
 
-`/memory digest` is manual and cross-project: it reads the project summaries generated since the checkpoint (default: the last 24 hours; `--force` reads all), lets the model expand a few records, and writes `digest/pending.json` + `pending.md`. It never writes Memory; the candidates wait for review. `/memory digest --apply [1,3,...]` promotes the chosen candidates to user scope and archives only the project records they name, with a comment recording the promotion; the applied batch moves to `digest/history/`.
+`/memory digest` runs automatically once a day at 00:00 Beijing time, and can also be run by hand: it reads the project summaries generated since the checkpoint (default: the last 24 hours; `--force` reads all), lets the model expand a few records, and writes `digest/pending.json` + `pending.md`. It never writes Memory; the candidates wait for review. `/memory digest --apply [1,3,...]` promotes the chosen candidates to user scope and archives only the project records they name, with a comment recording the promotion; the applied batch moves to `digest/history/`.
 
 A path with a space is one argument: quote it (`bind "/Users/me/My Project"`, `relink '/Old Project' '/New Project'`) or escape the space. A quote that is never closed is refused with `Invalid command arguments: unterminated quote.` rather than guessed at, because guessing the argument boundary is how a bind lands on the wrong directory.
 
@@ -146,6 +146,7 @@ Set fields on the plugin row in the profile's `cordis.patch.yml`:
 | `sessionEvents` | `false` | the only switch for the rows this plugin writes into the Session log. The harness offers a plugin no supported way to append Session events, so this uses an unknown type with the `ignorable` marker — a side door, not an interface — and stays off until a deployment asks |
 | `summaryBudgetBytes` | `1200` | Injected summary size, in UTF-8 bytes |
 | `summaryMinScore` | `0.5` | Lowest record score the summary describes; lower writes never change or invalidate it |
+| `autoDigest` | `true` | Scan cross-project Memory once a day at 00:00 Beijing time; manual commands still work when off |
 | `retrievalTopK` | `8` | Default result count for `memory_search` |
 | `projectRootMarkers` | `['.git']` | Names that identify a project root |
 | `lockTimeoutMs` | `10000` | Wait for the store lock before failing |

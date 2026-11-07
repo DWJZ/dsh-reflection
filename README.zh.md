@@ -115,6 +115,7 @@ envelope 的固定部分 —— 文件路径、指向单条文件的说明 —�
 | `sessionEvents` | `false` | 本插件写进 Session 日志的**唯一**开关。harness 没有给插件提供 append Session event 的受支持接口，这里用的是「未知类型 + `ignorable` 标记」这条侧门，所以默认关，由部署主动开启 |
 | `summaryBudgetBytes` | `2400` | 注入摘要的 UTF-8 字节上限；摘要调用会被告知这个数字，为不同预算写出的缓存会在下次读取时重新生成 |
 | `summaryMinScore` | `0.5` | 摘要只描述 score 不低于该值的记录；更低的写入既不进摘要，也不会触发重写 |
+| `autoDigest` | `true` | 每天北京时间 00:00 自动跑一次跨项目 digest；关闭后仍可手动执行 |
 | `retrievalTopK` | `8` | `memory_search` 默认返回条数 |
 | `projectRootMarkers` | `['.git']` | 标记 project root 的文件名 |
 | `lockTimeoutMs` | `10000` | 等 store 锁的上限，超时即报错 |

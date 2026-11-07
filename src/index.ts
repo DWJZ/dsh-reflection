@@ -32,6 +32,8 @@ import { cleanupStaleTemps, migrateStore, readStore } from './jsonstore.js'
 import { buildProvenance, createTurnTracker, registerMemorySummary, registerMemoryPolicy } from './inject.js'
 import { registerMemoryTools } from './tools.js'
 import { registerMemoryCommands } from './commands.js'
+import { runDigest } from './digest/index.js'
+import { createDailyDigest } from './digest/schedule.js'
 import { activeRecords } from './retention.js'
 import { readSummaryDocument, renderMemorySummary, summaryIsStale } from './summary.js'
 import { createSummaryService } from './summary-service.js'
@@ -123,6 +125,10 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
   let enabled = resolveEnabled(settings.memoryDir, settings.enabled)
   let runtimeFiber: { dispose(): Promise<void> } | null = null
   let llmScope: Context | null = null
+  /** The most recent agent, so the daily digest has a Session route to reuse. */
+  let lastAgent: MemoryAgent | null = null
+  /** The daily digest timer, built in `start()` and stopped in `dispose()`. */
+  let dailyDigest: ReturnType<typeof createDailyDigest> | null = null
   /** Built in `start()`, but referenced by the switch, which outlives mounting. */
   // Assigned in `start()` before anything reads it; the switch that flips the
   // plugin back on runs later, so the compiler cannot see the assignment.
@@ -196,6 +202,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
     const fiber = runtimeFiber
     runtimeFiber = null
     frozenSummaries.clear()
+    lastAgent = null
     if (fiber !== null && typeof fiber?.dispose === 'function') await fiber.dispose()
   }
 
@@ -292,6 +299,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
       // cached project, or the next command would still see the old one.
       const disposeCommands = registerMemoryCommands(ctx, deps)
       const disposeCreated = ctx.on('agent/created', async ({ agent }) => {
+        lastAgent = agent
         // `agent/created` is a serial event: the loop awaits each listener before
         // the first request, which is exactly the guarantee this lookup needs.
         // Resolving in the background would let the first turn run without a
@@ -357,6 +365,7 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
         if (collecting()) consolidation.observe(session, event)
       })
       const disposeStatus = ctx.on('agent/status', ({ agent, status }) => {
+        lastAgent = agent
         if (learningOnItsOwn()) consolidation.statusChanged(agent, status)
       })
       ctx.effect(() => () => {
@@ -370,6 +379,28 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
         disposeCommands()
       }, 'dsh-reflection.registrations')
 
+      if (settings.autoDigest) {
+        dailyDigest = createDailyDigest({
+          logger,
+          enabled: () => enabled === true && settings.consolidation.enabled === true,
+          run: async () => {
+            const agent = lastAgent
+            if (agent === null) {
+              logger.info?.('dsh-reflection: automatic digest skipped; no Session is known to reuse a model route from')
+              return
+            }
+            const outcome = await runDigest(deps, agent)
+            if (outcome.status === 'proposed') {
+              logger.info?.(`dsh-reflection: automatic digest proposed ${String(outcome.candidates)} candidate(s) at ${outcome.pendingPath}`)
+            } else if (outcome.status === 'nothing-new') {
+              logger.info?.(`dsh-reflection: automatic digest found nothing new since ${outcome.since ?? 'the beginning'}`)
+            } else {
+              logger.warn(`dsh-reflection: automatic digest did not run: ${outcome.message ?? 'unknown error'}`)
+            }
+          },
+        })
+        dailyDigest.start()
+      }
       if (enabled) mountRuntime()
       void migrateScopesOnMount(deps)
     },
@@ -383,7 +414,9 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
       // already past cancellation would otherwise reach the model and the store
       // while the plugin is being taken down.
       consolidation?.cancelPending()
+      dailyDigest?.dispose()
       await consolidation?.whenSettled()
+      await dailyDigest?.whenSettled()
       await summaryService.whenSettled()
       await unmountRuntime()
       tracker.dispose()

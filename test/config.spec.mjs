@@ -37,7 +37,8 @@ const base = resolveWith({})
 check('enabled defaults to true', base.enabled === true)
 check('the memory root is derived', base.memoryDir === join('/tmp/dsh-reflection-config-spec', 'memory'))
 check('the summary budget defaults to 2400 bytes', base.summaryBudgetBytes === 2400)
-check('the summary confidence floor defaults to 0.5', base.summaryMinScore === 0.5)
+check('the summary score floor defaults to 0.5', base.summaryMinScore === 0.5)
+check('the daily digest defaults to on', base.autoDigest === true)
 check('retrievalTopK defaults to 8', base.retrievalTopK === 8)
 check('projectRootMarkers defaults to .git',
   base.projectRootMarkers.length === 1 && base.projectRootMarkers[0] === '.git')
@@ -49,6 +50,7 @@ const overridden = resolveWith({
   enabled: false,
   summaryBudgetBytes: 900,
   summaryMinScore: 0.7,
+  autoDigest: false,
   retrievalTopK: 3,
   projectRootMarkers: ['.git', '.hg'],
   lockTimeoutMs: 250,
@@ -60,6 +62,7 @@ const overridden = resolveWith({
 check('enabled', overridden.enabled === false)
 check('summaryBudgetBytes', overridden.summaryBudgetBytes === 900)
 check('summaryMinScore', overridden.summaryMinScore === 0.7)
+check('autoDigest', overridden.autoDigest === false)
 check('retrievalTopK', overridden.retrievalTopK === 3)
 check('projectRootMarkers', overridden.projectRootMarkers.join(',') === '.git,.hg')
 check('lockTimeoutMs', overridden.lockTimeoutMs === 250)
@@ -80,6 +83,7 @@ check('exportInlineMaxBytes rejects zero', rejects({ exportInlineMaxBytes: 0 }, 
 check('evidenceQuoteMaxChars rejects a negative value', rejects({ evidenceQuoteMaxChars: -1 }, 'evidenceQuoteMaxChars'))
 check('summaryMinScore rejects above one', rejects({ summaryMinScore: 1.5 }, 'summaryMinScore'))
 check('summaryMinScore rejects a negative value', rejects({ summaryMinScore: -0.1 }, 'summaryMinScore'))
+check('autoDigest rejects a non-boolean', rejects({ autoDigest: 'daily' }, 'autoDigest'))
 check('a numeric field rejects NaN', rejects({ summaryBudgetBytes: Number.NaN }, 'summaryBudgetBytes'))
 check('a numeric field rejects Infinity', rejects({ summaryBudgetBytes: Number.POSITIVE_INFINITY }, 'summaryBudgetBytes'))
 check('projectRootMarkers rejects an empty array', rejects({ projectRootMarkers: [] }, 'projectRootMarkers'))

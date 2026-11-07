@@ -50,6 +50,8 @@ export interface MemorySettings {
   summaryBudgetBytes: number
   /** Lowest record score the summary describes and reacts to; lower records are ignored. */
   summaryMinScore: number
+  /** Whether the cross-project digest scans once a day at 00:00 Asia/Shanghai. */
+  autoDigest: boolean
   /** How many records a search returns. */
   retrievalTopK: number
   /** Markers that identify a project root, kept in step with the harness. */

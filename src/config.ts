@@ -23,6 +23,7 @@ export const DEFAULTS = Object.freeze({
   dshHome: '',
   summaryBudgetBytes: 2400,
   summaryMinScore: 0.5,
+  autoDigest: true,
   retrievalTopK: 8,
   // The same list `@deepseek-ai/dsh-agent-instructions` resolves a project root
   // with. A local plugin cannot read that resolved config, so the two are kept in
@@ -74,6 +75,7 @@ export function resolveConfig(
     memoryDir: resolveMemoryDir(dshHome),
     summaryBudgetBytes: integerSetting(raw.summaryBudgetBytes, DEFAULTS.summaryBudgetBytes, 'summaryBudgetBytes', 0),
     summaryMinScore: confidenceSetting(raw.summaryMinScore, DEFAULTS.summaryMinScore, 'summaryMinScore'),
+    autoDigest: booleanSetting(raw.autoDigest, DEFAULTS.autoDigest, 'autoDigest'),
     retrievalTopK: integerSetting(raw.retrievalTopK, DEFAULTS.retrievalTopK, 'retrievalTopK', 1),
     projectRootMarkers: markersSetting(raw.projectRootMarkers),
     lockTimeoutMs: integerSetting(raw.lockTimeoutMs, DEFAULTS.lockTimeoutMs, 'lockTimeoutMs', 1),
