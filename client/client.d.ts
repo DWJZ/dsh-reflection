@@ -7,6 +7,33 @@
  * needed because the envelope lives on `window` and the page renders DOM.
  */
 
+/**
+ * The browser module table's React, declared structurally.
+ *
+ * React reaches the page from the Harness module table, not from a package this
+ * plugin depends on, so nothing resolves `react` for the compiler here. These are
+ * the members the Settings page calls, declared with the signatures it relies on.
+ */
+interface DshReact {
+  /** Create one element; props and children are passed through to React. */
+  createElement(type: unknown, props?: Record<string, unknown> | null, ...children: DshReactChild[]): DshReactElement
+  /** Component state, with a setter that accepts a value or an updater. */
+  useState<T>(initial: T): [T, (next: T | ((current: T) => T)) => void]
+  /** Run an effect after render, returning its cleanup. */
+  useEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void
+  /** Memoize one callback until its dependencies change. */
+  useCallback<T>(callback: T, deps: readonly unknown[]): T
+}
+
+/** One child React accepts: an element, text, a nested array, or nothing. */
+type DshReactChild = DshReactElement | string | number | boolean | null | undefined | readonly DshReactChild[]
+
+/** One rendered element, opaque to this bundle. */
+interface DshReactElement {
+  /** React's reconciliation key, when one was supplied. */
+  readonly key?: string | number | null
+}
+
 /** The lazy-CommonJS envelope one plugin bundle is loaded through. */
 interface DshModuleLoader {
   /**

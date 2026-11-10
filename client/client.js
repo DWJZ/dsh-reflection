@@ -29,12 +29,15 @@ window.__ModuleLoader__.load({
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
 		/**
-		 * The module table's React. Its declarations are not a dependency of this
-		 * plugin — the page supplies the module — so the type is named at this one
-		 * cast and nowhere else.
-		 * @type {typeof import("react")}
+		 * The module table's React.
+		 *
+		 * React is supplied by the page, not by a package this plugin depends on, so
+		 * its declarations live in `client.d.ts` with the rest of the surface. Naming
+		 * `react` here instead would make the type depend on whichever checkout runs
+		 * the compiler.
+		 * @type {DshReact}
 		 */
-		const React = /** @type {typeof import("react")} */ (require("react"));
+		const React = /** @type {DshReact} */ (require("react"));
 
 		//#region locale
 		const NS = "dshMemory";
@@ -715,7 +718,7 @@ window.__ModuleLoader__.load({
 		 * the current render: every action response is followed by a fresh read, so
 		 * a scan that ran meanwhile is reflected immediately.
 		 * @param {DshSettingsSectionProps} props - the slot's props with this namespace's translate function.
-		 * @returns {import("react").ReactElement} - the page element.
+		 * @returns {DshReactElement} - the page element.
 		 */
 		function MemorySection(props) {
 			const t = props.t;
@@ -867,7 +870,7 @@ window.__ModuleLoader__.load({
 				}
 			};
 
-			/** @type {import("react").ReactNode[]} */
+			/** @type {DshReactChild[]} */
 			const children = [
 				React.createElement("div", { className: "dshm_title", key: "title" }, t("heading")),
 				React.createElement("div", { className: "dshm_desc", key: "intro" }, t("intro"))
