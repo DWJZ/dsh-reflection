@@ -1,6 +1,6 @@
 {
   "name": "dsh-reflection",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "description": "DeepSeek Harness 持久记忆插件：把用户与项目的长期记忆存在 $DSH_HOME/memory，并在每个新会话注入紧凑索引。 / Persistent user and project memory for DeepSeek Harness, stored under $DSH_HOME/memory and injected as a compact index.",
   "type": "module",
   "license": "MIT",
