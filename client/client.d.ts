@@ -3,8 +3,8 @@
  *
  * The client loads a bundle by calling one global envelope with an id and a
  * factory; the factory receives a CommonJS-style `require` for the client modules
- * it names. Nothing here renders DOM, so the DOM library is needed only because
- * the envelope lives on `window`.
+ * it names — `react` for the Settings page, and nothing else. The DOM library is
+ * needed because the envelope lives on `window` and the page renders DOM.
  */
 
 /** The lazy-CommonJS envelope one plugin bundle is loaded through. */
@@ -57,6 +57,106 @@ interface DshTrajectoryRow {
   buildViewNode(context: DshLedgerNode): unknown
 }
 
+/** One entry of the Settings page's candidate list, as the Host sends it. */
+interface DshReviewSource {
+  project_id: string
+  /** Short project name, or the id when the registry cannot name it. */
+  project: string
+  /** Canonical project root, shown as a tooltip. */
+  project_root: string | null
+  record_id: string
+}
+
+/** One pending candidate, as the Host sends it. */
+interface DshReviewCandidate {
+  /** 1-based position; the number an action names. */
+  index: number
+  title: string
+  content: string
+  sources: DshReviewSource[]
+}
+
+/** One candidate the digest validation dropped. */
+interface DshReviewRejected {
+  title: string
+  reason: string
+  workspaces?: number
+}
+
+/** The pending queue, as the Host sends it. */
+interface DshReviewPending {
+  created_at: string
+  scan_from: string | null
+  scan_to: string
+  model?: string
+  usage?: { inputTokens: number; outputTokens: number }
+  candidates: DshReviewCandidate[]
+  rejected: DshReviewRejected[]
+}
+
+/** What one read of the review route carries. */
+interface DshReviewState {
+  enabled: boolean
+  lastScanAt: string | null
+  pending: DshReviewPending | null
+  problem?: string
+}
+
+/** The page's current read: which phase it is in, and what it knows. */
+interface DshReviewSnapshot {
+  phase: 'loading' | 'unavailable' | 'error' | 'ready'
+  state?: DshReviewState
+  message?: string
+}
+
+/** The Settings page's per-candidate action choice. */
+interface DshReviewConfirm {
+  action: 'apply' | 'discard'
+}
+
+/** One result banner. */
+interface DshReviewNotice {
+  tone: 'ok' | 'error'
+  text: string
+}
+
+/** The Settings page's props: the slot binds this namespace's translate function. */
+interface DshSettingsSectionProps {
+  t: Translate
+}
+
+/** The slot services this bundle registers a Settings section through. */
+interface DshClientSlots {
+  /**
+   * Register a contribution while one slot exists; the callback's registrations
+   * are torn down and reinstalled with that slot.
+   * @param key - the slot key.
+   * @param callback - the registrations, returning their disposer.
+   * @returns the disposer that withdraws the contribution.
+   */
+  inject(key: 'settings.section', callback: () => () => void): () => void
+  /**
+   * Register one occupant of a slot list.
+   * @param options - the slot name and its registration options.
+   * @param component - the component the slot renders.
+   * @returns the disposer that unregisters the occupant.
+   */
+  register(
+    options: {
+      name: 'settings.section'
+      /** The section key; a fresh id is added beside the shipped sections. */
+      id: string
+      /** Position among the sections. */
+      order?: number
+      /** Display text for the navigation row, read on every projection. */
+      label?: () => string
+      /** The namespace the slot binds as the component's `t`. */
+      locale?: string
+    },
+    component: (props: DshSettingsSectionProps) => unknown,
+  ): () => void
+}
+
 /** This plugin's Client context. */
 interface DshClientContext {
   /**
@@ -78,6 +178,8 @@ interface DshClientContext {
       register(definition: DshTrajectoryRow): () => void
     }
   }
+  /** The slot service, where the Settings page is registered. */
+  slots: DshClientSlots
 }
 
 /** The event a row matched, as the ledger hands it over. */
@@ -113,7 +215,7 @@ interface TrajectoryRowOptions {
 
 /** The bundle's exports. The offline smoke test drives these directly. */
 interface DshMemoryClientExports {
-  /** Register the dictionaries and the two ledger rows. */
+  /** Register the dictionaries, the three ledger rows, and the Settings page. */
   apply(ctx: DshClientContext): void
   /** The client services this bundle waits for. */
   inject: string[]
@@ -121,16 +223,32 @@ interface DshMemoryClientExports {
   consolidationSummary(payload: Record<string, unknown>, t: Translate): string
   /** One-line summary of a project attribution. */
   projectSummary(payload: Record<string, unknown>, t: Translate): string
+  /** One-line summary of a digest run or apply. */
+  digestSummary(payload: Record<string, unknown>, t: Translate): string
   /** Ledger emphasis for a consolidation status. */
   statusTone(status: unknown): string
+  /** Ledger emphasis for a digest payload. */
+  digestTone(payload: Record<string, unknown>): string
   /** Build the consolidation row definition. */
   createConsolidationRow(translate: Translate): DshTrajectoryRow
   /** Build the project row definition. */
   createProjectRow(translate: Translate): DshTrajectoryRow
+  /** Build the digest row definition. */
+  createDigestRow(translate: Translate): DshTrajectoryRow
+  /** The Settings page component. */
+  MemorySection(props: DshSettingsSectionProps): unknown
   /** The record name the consolidation row folds. */
   CONSOLIDATION_EVENT: string
   /** The record name the project row folds. */
   PROJECT_EVENT: string
+  /** The record name the digest row folds. */
+  DIGEST_EVENT: string
+  /** Where the page reads the pending queue. */
+  REVIEW_PATH: string
+  /** Where the page posts one apply. */
+  REVIEW_APPLY_PATH: string
+  /** Where the page posts one discard. */
+  REVIEW_DISCARD_PATH: string
 }
 
 /** What the ledger hands a row while it folds or renders one node. */

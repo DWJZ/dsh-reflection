@@ -36,14 +36,29 @@ check('the bundle registers one module', captured !== null && captured.id === 'd
 
 // Anything but the module table would be a Harness Client package, which a
 // plugin half may not reach for: its injected services are the whole surface.
+// React is the one module the page's table may supply; the stub is enough because
+// these assertions never render the Settings page, they read what it registered.
+const reactStub = {
+  createElement: () => null,
+  useState: (initial) => [initial, () => {}],
+  useEffect: () => {},
+  useCallback: (callback) => callback,
+}
 let requires = 0
-const stubRequire = (specifier) => { requires += 1; throw new Error(`unexpected require: ${specifier}`) }
+const requested = []
+const stubRequire = (specifier) => {
+  requires += 1
+  requested.push(specifier)
+  if (specifier === 'react') return reactStub
+  throw new Error(`unexpected require: ${specifier}`)
+}
 const client = captured.factory(stubRequire)
 check('the factory exports apply', typeof client.apply === 'function')
-check('the factory exports inject', Array.isArray(client.inject) && client.inject.length === 2
-  && client.inject.includes('locale') && client.inject.includes('uiConversation'),
+check('the factory exports inject', Array.isArray(client.inject) && client.inject.length === 3
+  && client.inject.includes('locale') && client.inject.includes('uiConversation') && client.inject.includes('slots'),
 String(client.inject))
-check('the client half requests no Harness package', requires === 0, String(requires))
+check('the client half requests react and no Harness package',
+  requires === 1 && requested[0] === 'react', JSON.stringify(requested))
 
 /**
  * A locale service that fails on any key the dictionary does not hold, so an
@@ -76,6 +91,8 @@ const install = (locale) => {
   const { service, dictionaries } = localeService(locale)
   const definitions = []
   const effects = []
+  const sections = []
+  const slotInjections = []
   let insideEffect = 0
   let outsideEffect = 0
   const ctx = {
@@ -95,47 +112,82 @@ const install = (locale) => {
         },
       },
     },
+    slots: {
+      inject: (key, callback) => {
+        if (insideEffect === 0) outsideEffect += 1
+        slotInjections.push(key)
+        return callback()
+      },
+      register: (options, component) => {
+        if (insideEffect === 0) outsideEffect += 1
+        sections.push({ options, component })
+        return () => {}
+      },
+    },
   }
   client.apply(ctx)
-  return { definitions, effects, dictionaries, outsideEffect }
+  return { definitions, effects, dictionaries, outsideEffect, sections, slotInjections }
 }
 
 console.log('registration')
 const en = install('en')
 const zh = install('zh')
-check('two definitions are registered, one per event type',
-  en.definitions.length === 2, JSON.stringify(en.definitions.map(entry => entry.kind)))
-check('both target the Trajectory ledger',
+check('three definitions are registered, one per event family',
+  en.definitions.length === 3, JSON.stringify(en.definitions.map(entry => entry.kind)))
+check('all three target the Trajectory ledger',
   en.definitions.every(entry => entry.target === 'trajectory'),
   JSON.stringify(en.definitions.map(entry => entry.target)))
 check('their kinds differ, because the registry keys definitions by kind alone',
-  en.definitions[0].kind !== en.definitions[1].kind,
-  `${String(en.definitions[0].kind)} / ${String(en.definitions[1].kind)}`)
-check('every contribution is an effect', en.effects.length === 3 && en.outsideEffect === 0,
+  new Set(en.definitions.map(entry => entry.kind)).size === 3,
+  JSON.stringify(en.definitions.map(entry => entry.kind)))
+check('every contribution is an effect', en.effects.length === 6 && en.outsideEffect === 0,
   JSON.stringify(en.effects))
 check('the dictionary is registered once, for both languages, with the same keys',
   en.dictionaries.length === 1 && en.dictionaries[0].ns === 'dshMemory'
   && Object.keys(en.dictionaries[0].dicts.zh).length === Object.keys(en.dictionaries[0].dicts.en).length
-  && Object.keys(en.dictionaries[0].dicts.zh).every(key => key in en.dictionaries[0].dicts.en),
+  && Object.keys(en.dictionaries[0].dicts.zh).every(key => key in en.dictionaries[0].dicts.en)
+  && Object.keys(en.dictionaries[0].dicts.en).every(key => key in en.dictionaries[0].dicts.zh),
   JSON.stringify(en.dictionaries.map(entry => entry.ns)))
+check('the Settings page is registered once, under the Memory section id',
+  en.sections.length === 1 && en.sections[0].options.name === 'settings.section'
+  && en.sections[0].options.id === 'dsh-reflection' && en.sections[0].options.locale === 'dshMemory'
+  && en.sections[0].options.order === 25 && typeof en.sections[0].options.label === 'function'
+  && en.sections[0].options.label() === 'Memory'
+  && zh.sections[0].options.label() === '记忆'
+  && typeof en.sections[0].component === 'function'
+  && en.slotInjections.length === 1 && en.slotInjections[0] === 'settings.section',
+  JSON.stringify({ sections: en.sections.map(entry => entry.options.id), injections: en.slotInjections }))
 
 console.log('which events the rows claim')
 const consolidation = en.definitions.find(entry => entry.kind === 'trajectory-memory-consolidation')
 const project = en.definitions.find(entry => entry.kind === 'trajectory-memory-project')
+const digest = en.definitions.find(entry => entry.kind === 'trajectory-memory-digest')
 const consolidationEvent = (seq, data) => ({ type: client.CONSOLIDATION_EVENT, seq, time: 1_700_000_000_000, data })
 const projectEvent = (seq, data) => ({ type: client.PROJECT_EVENT, seq, time: 1_700_000_000_000, data })
+const digestEvent = (seq, data) => ({ type: client.DIGEST_EVENT, seq, time: 1_700_000_000_000, data })
 check('the consolidation row claims its own event type only',
   consolidation?.match(consolidationEvent(7, {}))?.role === 'start'
   && consolidation?.match(projectEvent(7, {})) === null
+  && consolidation?.match(digestEvent(7, {})) === null
   && consolidation?.match({ type: 'tool/call', seq: 1, data: {} }) === null,
   JSON.stringify(consolidation?.match(consolidationEvent(7, {}))))
 check('the project row claims its own event type only',
   project?.match(projectEvent(7, {}))?.role === 'start'
-  && project?.match(consolidationEvent(7, {})) === null,
+  && project?.match(consolidationEvent(7, {})) === null
+  && project?.match(digestEvent(7, {})) === null,
   JSON.stringify(project?.match(projectEvent(7, {}))))
-check('the two rows are identified apart',
-  consolidation?.match(consolidationEvent(7, {}))?.id !== project?.match(projectEvent(7, {}))?.id,
-  `${String(consolidation?.match(consolidationEvent(7, {}))?.id)} / ${String(project?.match(projectEvent(7, {}))?.id)}`)
+check('the digest row claims its own event type only',
+  digest?.match(digestEvent(7, {}))?.role === 'start'
+  && digest?.match(consolidationEvent(7, {})) === null
+  && digest?.match(projectEvent(7, {})) === null,
+  JSON.stringify(digest?.match(digestEvent(7, {}))))
+check('the three rows are identified apart',
+  new Set([
+    consolidation?.match(consolidationEvent(7, {}))?.id,
+    project?.match(projectEvent(7, {}))?.id,
+    digest?.match(digestEvent(7, {}))?.id
+  ]).size === 3,
+  `${String(consolidation?.match(consolidationEvent(7, {}))?.id)} / ${String(project?.match(projectEvent(7, {}))?.id)} / ${String(digest?.match(digestEvent(7, {}))?.id)}`)
 
 /** One row built from one event, the way the assembler builds it. */
 const rowOf = (definition, event) => definition.buildViewNode({
@@ -251,6 +303,59 @@ check('a Session outside any workspace says so instead of printing null',
   === '📁 Project attribution · /Users/me/project · by registry path · project proj_01J8Z · no workspace',
   String(textOf(project, projectEvent(6, { ...attribution, workspace_id: null }))))
 
+console.log('the digest row')
+const digestRun = {
+  kind: 'run',
+  at: '2026-11-06T16:00:00.000Z',
+  scan_from: '2026-10-29T00:51:58.572Z',
+  scan_to: '2026-11-06T16:00:00.000Z',
+  projects: [],
+  expanded: [],
+  candidates: 3,
+  rejected: 1,
+  model: 'deepseek-account/deepseek-flash',
+}
+check('a scan names the window, the candidate count, the rejected count and the model',
+  textOf(digest, digestEvent(20, digestRun))
+  === '🧩 Cross-project digest · window 2026-10-29 .. 2026-11-06 · candidates 3 · rejected 1 · model deepseek-account/deepseek-flash',
+  String(textOf(digest, digestEvent(20, digestRun))))
+check('a scan is a fact, not an outcome, so it stays neutral',
+  toneOf(digest, digestEvent(20, digestRun)) === 'neutral',
+  String(toneOf(digest, digestEvent(20, digestRun))))
+check('a first scan with no window says it covered all history',
+  textOf(digest, digestEvent(21, { ...digestRun, scan_from: null, rejected: 0 }))
+  === '🧩 Cross-project digest · all history · candidates 3 · model deepseek-account/deepseek-flash',
+  String(textOf(digest, digestEvent(21, { ...digestRun, scan_from: null, rejected: 0 }))))
+const digestApply = {
+  kind: 'apply',
+  at: '2026-11-07T02:00:00.000Z',
+  applied: [{ index: 1, title: 'A', record_id: 'mem_1' }, { index: 3, title: 'B', record_id: 'mem_2' }],
+  archived: ['mem_a', 'mem_b', 'mem_c'],
+  skipped: 1,
+  remaining: 1,
+}
+check('an apply counts what it wrote, archived and left pending',
+  textOf(digest, digestEvent(22, digestApply))
+  === '🧩 Cross-project digest · applied 2 · archived 3 · remaining 1',
+  String(textOf(digest, digestEvent(22, digestApply))))
+check('an apply that wrote something asks for the positive tone',
+  toneOf(digest, digestEvent(22, digestApply)) === 'positive',
+  String(toneOf(digest, digestEvent(22, digestApply))))
+check('an apply that wrote nothing reads as a warning',
+  toneOf(digest, digestEvent(23, { ...digestApply, applied: [] })) === 'warning',
+  String(toneOf(digest, digestEvent(23, { ...digestApply, applied: [] }))))
+check('the raw digest payload rides along for the details panel',
+  rowOf(digest, digestEvent(20, digestRun))?.data?.node?.value === digestRun
+  && rowOf(digest, digestEvent(20, digestRun))?.data?.node?.key === client.DIGEST_EVENT,
+  JSON.stringify(rowOf(digest, digestEvent(20, digestRun))?.data?.node))
+
+console.log('the review routes the page calls')
+check('every route is a same-origin absolute path',
+  client.REVIEW_PATH === '/dsh-reflection/digest'
+  && client.REVIEW_APPLY_PATH === '/dsh-reflection/digest/apply'
+  && client.REVIEW_DISCARD_PATH === '/dsh-reflection/digest/discard',
+  JSON.stringify([client.REVIEW_PATH, client.REVIEW_APPLY_PATH, client.REVIEW_DISCARD_PATH]))
+
 console.log('rows written before the migration still fold')
 // A Session keeps whichever name it was written under, so both have to render.
 const legacyProjectEvent = (seq, data) => ({ type: 'dsh-reflection/project', seq, time: 1_700_000_000_000, data })
@@ -333,13 +438,23 @@ if (shipped === null) {
 } else {
   const live = localeService('en')
   const registry = new shipped.ConversationEventRegistry({ effect: (factory) => factory() })
+  const sections = []
   client.apply({
     effect: (factory) => factory(),
     locale: live.service,
     uiConversation: { events: { register: (definition) => registry.register(definition) } },
+    slots: {
+      inject: (_key, callback) => callback(),
+      register: (options, component) => {
+        sections.push({ options, component })
+        return () => {}
+      },
+    },
   })
-  check('the shipped registry accepts both definitions',
-    registry.entries().length === 2, JSON.stringify(registry.entries().map(entry => entry.kind)))
+  check('the shipped registry accepts all three definitions',
+    registry.entries().length === 3, JSON.stringify(registry.entries().map(entry => entry.kind)))
+  check('the shipped client surface accepted the Settings section too',
+    sections.length === 1 && sections[0].options.id === 'dsh-reflection', JSON.stringify(sections.map(entry => entry.options.id)))
   check('and refuses a second definition under a kind it already owns',
     (() => {
       try {
@@ -349,15 +464,16 @@ if (shipped === null) {
     })())
   const consolidationNode = rowOf(registry.entries()[0], consolidationEvent(49, success))
   const projectNode = rowOf(registry.entries()[1], projectEvent(4, attribution))
+  const digestNode = rowOf(registry.entries()[2], digestEvent(20, digestRun))
   const layout = shipped.deriveTrajectoryLayout(
     // The snapshot builder hands the target the inner ConversationNode, not the
     // view-node envelope the definition returns.
-    { nodes: [consolidationNode.data.node, projectNode.data.node], partial: null, runningCalls: [] },
+    { nodes: [consolidationNode.data.node, projectNode.data.node, digestNode.data.node], partial: null, runningCalls: [] },
     (key) => key,
   )
   const cells = layout.flatMap(turn => turn.groups.flatMap(group => group.cells))
-  check('the shipped layout projection turns both into ledger cells',
-    cells.length === 2 && cells.every(cell => cell.kind === 'extension'),
+  check('the shipped layout projection turns all three into ledger cells',
+    cells.length === 3 && cells.every(cell => cell.kind === 'extension'),
     JSON.stringify(cells.map(cell => cell.kind)))
   // The ledger orders rows by seq, so the two arrive in log order, not
   // registration order.
@@ -375,6 +491,11 @@ if (shipped === null) {
     projectCell?.text === '📁 Project attribution · /Users/me/project · by registry path · project proj_01J8Z · workspace ws_7'
     && projectCell?.extension?.value === attribution,
     JSON.stringify(projectCell))
+  const digestCell = bySeq.get(20)
+  check('the digest cell carries its scan summary and payload',
+    digestCell?.text === '🧩 Cross-project digest · window 2026-10-29 .. 2026-11-06 · candidates 3 · rejected 1 · model deepseek-account/deepseek-flash'
+    && digestCell?.extension?.value === digestRun && digestCell?.extension?.tone === 'neutral',
+    JSON.stringify(digestCell))
 }
 
 console.log(failures === 0 ? '\nPASS' : `\n${String(failures)} FAILURE(S)`)
