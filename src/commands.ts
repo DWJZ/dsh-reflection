@@ -104,6 +104,7 @@ async function digestCommand(deps: MemoryDeps, invocation: CommandInvocation, fl
       return ok([
         `Applied ${String(applied.applied)} candidate(s); archived ${String(applied.archived)} source record(s); ${String(applied.skipped)} already out of service.`,
         applied.remaining === 0 ? `Pending is empty; the applied batch went to ${where}` : `${String(applied.remaining)} candidate(s) still pending at ${where}`,
+        'The same queue is reviewable in Settings → Memory.',
       ].join('\n'))
     }
     const outcome = await runDigest(deps, invocation.agent, { force: flags.has('force') === true })
@@ -114,7 +115,8 @@ async function digestCommand(deps: MemoryDeps, invocation: CommandInvocation, fl
     const lines = [
       `Digest window: ${outcome.since ?? 'all available'} .. ${outcome.to}`,
       `${String(outcome.candidates)} candidate(s), ${String(outcome.rejected)} rejected.`,
-      `Review: ${outcome.pendingPath}`,
+      `Review in Settings → Memory, or apply here with /memory digest --apply [1,3,...].`,
+      `Files: ${outcome.pendingPath}`,
     ]
     for (const [index, candidate] of outcome.preview.entries()) {
       lines.push('', `${String(index + 1)}. ${candidate.title}`, `   ${candidate.content}`)

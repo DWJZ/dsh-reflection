@@ -32,6 +32,7 @@ import { cleanupStaleTemps, migrateStore, readStore } from './jsonstore.js'
 import { buildProvenance, createTurnTracker, registerMemorySummary, registerMemoryPolicy } from './inject.js'
 import { registerMemoryTools } from './tools.js'
 import { registerMemoryCommands } from './commands.js'
+import { mountReviewRoutes } from './web.js'
 import { runDigest } from './digest/index.js'
 import { createDailyDigest } from './digest/schedule.js'
 import { activeRecords } from './retention.js'
@@ -364,12 +365,17 @@ const PROJECT_EVENT_TYPE = 'plugin:dsh-reflection/project'
         if (event.type === 'compaction/end') frozenSummaries.delete(session.id)
         if (collecting()) consolidation.observe(session, event)
       })
+      // The Settings page reads and acts on the pending queue through three
+      // same-origin routes. The injection keeps the plugin usable in profiles
+      // without a Web host, where the page simply has nothing to call.
+      const reviewFiber = mountReviewRoutes(ctx, { deps, agent: () => lastAgent ?? undefined })
       const disposeStatus = ctx.on('agent/status', ({ agent, status }) => {
         lastAgent = agent
         if (learningOnItsOwn()) consolidation.statusChanged(agent, status)
       })
       ctx.effect(() => () => {
         llmScope = null
+        void reviewFiber?.dispose()
         void llmFiber?.dispose()
         consolidation.dispose()
         disposeStatus()

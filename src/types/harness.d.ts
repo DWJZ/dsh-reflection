@@ -145,5 +145,39 @@ declare module '@deepseek-ai/cordis' {
       warn(message: string | Error, ...rest: unknown[]): void
       debug(message: string): void
     }
+
+    /**
+     * The Web host's route registry. Produced while a profile serves a browser,
+     * which is why every use of it sits behind an injection.
+     */
+    webServer: {
+      register(route: MemoryWebRoute): () => void
+    }
   }
+}
+
+/** One route the Web host mounts for a plugin. */
+interface MemoryWebRoute {
+  /** Exact routes match one path; prefix routes own everything below it. */
+  kind: 'exact' | 'prefix'
+  /** Absolute request path. */
+  path: string
+  /** The handler owns its response; the host never writes one for it. */
+  handler(request: MemoryWebRequest, response: MemoryWebResponse): void | Promise<void>
+}
+
+/** One HTTP request the Web host hands a plugin route. */
+interface MemoryWebRequest {
+  readonly method?: string | undefined
+  readonly url?: string | undefined
+  readonly headers: Record<string, string | string[] | undefined>
+  readonly socket?: { readonly remoteAddress?: string | undefined } | undefined
+  /** Node request streams are async iterable; a body is read through this. */
+  [Symbol.asyncIterator](): AsyncIterator<unknown>
+}
+
+/** The response half a plugin route owns. */
+interface MemoryWebResponse {
+  writeHead(status: number, headers?: Record<string, string>): unknown
+  end(body?: string): unknown
 }

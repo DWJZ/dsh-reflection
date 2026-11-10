@@ -35,13 +35,14 @@ export interface ApplyResult {
 /**
  * Apply selected candidates from the pending digest.
  * @param deps - command wiring: scopes, locks, clock, and summary refresh.
- * @param agent - the Session used for the post-apply summary refresh.
+ * @param agent - the Session used for the audit record and the post-apply summary refresh;
+ *   absent when the apply came from the browser and no Session has been seen yet.
  * @param selection - comma-separated 1-based candidate numbers; undefined or empty for all.
  * @returns what was written and what remains.
  */
 export async function applyDigest(
   deps: MemoryDeps,
-  agent: MemoryAgent,
+  agent: MemoryAgent | undefined,
   selection?: string,
 ): Promise<ApplyResult> {
   const layout = digestLayout(deps.config.memoryDir)
@@ -140,13 +141,15 @@ export async function applyDigest(
   // The writes are done; regenerating the user summary is a model call and can
   // take minutes. Only user scope moved, so leave project summaries to the read
   // path and return instead of making the command look hung.
-  try {
-    const refresh = deps.refreshUserSummary?.(agent)
-    if (refresh !== undefined) {
-      void refresh.catch(failure => deps.logger.warn(`dsh-reflection: summaries were not refreshed after apply: ${failureMessage(failure)}`))
+  if (agent !== undefined) {
+    try {
+      const refresh = deps.refreshUserSummary?.(agent)
+      if (refresh !== undefined) {
+        void refresh.catch(failure => deps.logger.warn(`dsh-reflection: summaries were not refreshed after apply: ${failureMessage(failure)}`))
+      }
+    } catch (failure) {
+      deps.logger.warn(`dsh-reflection: summaries were not refreshed after apply: ${failureMessage(failure)}`)
     }
-  } catch (failure) {
-    deps.logger.warn(`dsh-reflection: summaries were not refreshed after apply: ${failureMessage(failure)}`)
   }
   return {
     status: 'applied',
