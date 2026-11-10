@@ -777,6 +777,21 @@ memory_search / memory_get → 按 read tool 正常展示必要参数
 
 ---
 
+### 16.2 审查界面（设置 → 记忆）
+
+pending 队列除了命令，还能在 Web 界面的设置页里审查。页面是浏览器半注册的 `settings.section`（`id: dsh-reflection`，`order: 25`，中英文字典，样式只用 `--dsw-alias-*` token），数据与动作走三个宿主路由。
+
+- **路由**：`GET /dsh-reflection/digest`、`POST /dsh-reflection/digest/apply`、`POST /dsh-reflection/digest/discard`，注册在 `ctx.webServer` 的 exact 路由上。宿主半用 `ctx.inject(['webServer'], …)` 挂载，没有 Web 宿主的 profile 保持注入挂起，页面显示"当前环境没有提供记忆审查接口"，插件其余功能不受影响。
+- **安全**：每个请求先过 `sameOriginLoopback` 校验——`socket.remoteAddress` 必须是回环地址，且不得带 `forwarded` / `x-forwarded-for` / `x-real-ip`（防止代理伪造），`Origin` 与 `Host` 必须同源（没有 `Origin` 时要求非空 `Host`）。响应 `cache-control: no-store`，不设 CORS 头。页面内容是个人的待审经验，因此不接受本机以外的调用。
+- **读**：返回 `enabled`（记忆开关）、`lastScanAt`、`pending`（`created_at`、`scan_from`、`scan_to`、`model`、`usage`、候选及其 1-based 编号、正文、来源记录与来源项目名、被拒候选及原因）。`pending.json` 不存在时 `pending: null`；内容损坏时 `pending: null` 加 `problem` 文本，不是 500。
+- **应用**：请求体 `{ selection: [1,2], expectedScanTo }`，动作复用 `applyDigest`，因此提升与归档规则与命令完全一致。拒绝情形：插件关闭、队列不存在、队列不可读、`expectedScanTo` 与磁盘不一致（`stale`，409）、编号越界（400）。没有可用 Session 时仍然完成写入，只是不写 Session 审计记录，响应里 `audited: false`。
+- **忽略**：请求体 `{ selection: [3] }`，把选中的候选写进 `digest/discarded/<ISO 时间戳>.json`（含 `discarded_at`、窗口与候选原文），然后重写 pending.json 与 pending.md；全部忽略时删除这两个文件。忽略不写 Memory，也不改写任何记录。
+- **并发**：三个动作在一个进程内串行队列里执行，两个标签页不会交错读改写同一个 pending 文件；记录级写入仍走 Phase 1 的存储锁。
+- **刷新**：页面在挂载、窗口重新获得焦点、以及每次动作完成后各读一次队列，不做轮询，也不新增推送通道。动作返回 409 时页面提示队列已变化并重新读取。
+- **不改变模型可见行为**：候选正文仍只存在 pending 文件里，不复制进 Session 日志；审查页只是同一队列的另一个读写入口。
+
+---
+
 ## 17. Enable / Disable
 
 开关持久化到本插件自己拥有的 `$DSH_HOME/memory/config.json`：

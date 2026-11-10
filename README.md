@@ -131,9 +131,19 @@ its own initiative, before work that may have been done before.
 
 `forget` deletes outright and leaves only a tombstone that carries no content. `archive` keeps the record and takes it out of the index. `list` may truncate and says how many rows remain; `export` never truncates — it fails with guidance instead.
 
-`/memory digest` runs automatically once a day at 00:00 Beijing time, and can also be run by hand: it reads the project summaries generated since the checkpoint (default: the last 24 hours; `--force` reads all), lets the model expand a few records, and writes `digest/pending.json` + `pending.md`. It never writes Memory; the candidates wait for review. `/memory digest --apply [1,3,...]` promotes the chosen candidates to user scope and archives only the project records they name, with a comment recording the promotion; the applied batch moves to `digest/history/`.
+`/memory digest` runs automatically once a day at 00:00 Beijing time, and can also be run by hand: it reads the project summaries generated since the checkpoint (default: the last 24 hours; `--force` reads all), lets the model expand a few records, and writes `digest/pending.json` + `pending.md`. It never writes Memory; the candidates wait for review. `/memory digest --apply [1,3,...]` promotes the chosen candidates to user scope and archives only the project records they name, with a comment recording the promotion; the applied batch moves to `digest/history/`. The same queue is reviewable in the Web UI's Settings page, described below.
 
 A path with a space is one argument: quote it (`bind "/Users/me/My Project"`, `relink '/Old Project' '/New Project'`) or escape the space. A quote that is never closed is refused with `Invalid command arguments: unterminated quote.` rather than guessed at, because guessing the argument boundary is how a bind lands on the wrong directory.
+
+### Reviewing the pending queue
+
+A digest run only proposes; nothing reaches Memory until someone reviews it. Besides the command, the queue is reviewable in the Web UI under **Settings → Memory**: the page lists every pending candidate with its sources, the scan window that produced it, how many project records an apply would archive, and the candidates the validation rejected, with the reason for each.
+
+- **Apply** promotes the selected candidates exactly as `/memory digest --apply` does — one user-scope record each, archiving only the project records they name — and asks for confirmation first, because archiving takes those sources out of their project's injected summary.
+- **Drop** removes the selected candidates from the queue and archives the decision under `digest/discarded/`; it writes no Memory.
+- The page reads the queue when it opens, when the window regains focus, and after every action. It does not poll. A queue that changed between the read and an action is refused and re-read, so a stale candidate number can never be applied.
+- The queue is personal. The three routes behind the page answer only same-origin requests from this machine, and no response is cached.
+- When Memory is off, or the page is open in an environment without the Web host, the page says so instead of offering actions.
 
 ### Configuration
 
@@ -143,7 +153,7 @@ Set fields on the plugin row in the profile's `cordis.patch.yml`:
 |---|---|---|
 | `enabled` | `true` | Initial state; overridden by `config.json` |
 | `dshHome` | `$DSH_HOME`, else `~/.dsh` | Harness home; Memory always sits below it |
-| `sessionEvents` | `false` | the only switch for the rows this plugin writes into the Session log. The harness offers a plugin no supported way to append Session events, so this uses an unknown type with the `ignorable` marker — a side door, not an interface — and stays off until a deployment asks |
+| `sessionEvents` | `false` | switch for the consolidation and project rows. The harness offers a plugin no supported way to append Session events, so these use an unknown type with the `ignorable` marker — a side door, not an interface — and stay off until a deployment asks. Digest audit rows are written whenever a Session is available, as the digest contract requires |
 | `summaryBudgetBytes` | `1200` | Injected summary size, in UTF-8 bytes |
 | `summaryMinScore` | `0.5` | Lowest record score the summary describes; lower writes never change or invalidate it |
 | `autoDigest` | `true` | Scan cross-project Memory once a day at 00:00 Beijing time; manual commands still work when off |
@@ -184,8 +194,9 @@ When `sessionEvents` is on, the Web UI's Trajectory ledger shows what the plugin
 |---|---|---|
 | `plugin:dsh-reflection/consolidation` | the run's status and trigger, the sequence range it covered, and what it wrote — added, updated, superseded and no-op counts, plus rejected, skipped and failed when there were any. A gap names the range no process ever observed and carries no counts | `success` green, `partial` amber, `no-human-turn` grey, `gap` red |
 | `plugin:dsh-reflection/project` | the project root, which lookup decided it — a registered path, a workspace, or a root marker — and the project and workspace ids | none: an attribution is a fact, not an outcome |
+| `plugin:dsh-reflection/digest` | a scan: the scan window, how many candidates it proposed, how many were rejected, and the model. An apply: how many candidates were written, how many source records were archived, and how many remain pending | a scan is a fact and stays grey; an apply that wrote something is green, one that wrote nothing is amber |
 
-Both records are log-only: `appendPluginRecord` writes them with the envelope's `ignorable` marker, so they never reach a model request, and a build that does not know the name skips them instead of refusing the session. Each row is an `extension` record — this plugin's own summary, emphasis and raw payload — so the ledger renders it without knowing any of this plugin's field names, and the shared details payload tab shows the audit as it was written. Nothing here is served over HTTP: the rows read the Session's own log.
+All three records are log-only: `appendPluginRecord` writes them with the envelope's `ignorable` marker, so they never reach a model request, and a build that does not know the name skips them instead of refusing the session. Each row is an `extension` record — this plugin's own summary, emphasis and raw payload — so the ledger renders it without knowing any of this plugin's field names, and the shared details payload tab shows the audit as it was written. The rows read the Session's own log; the only HTTP surface is the pending queue's review routes, which serve the Settings page and carry nothing beyond the candidates awaiting review.
 
 The browser half is declared through `package.json`'s `dsh.client`, so the bundle patch carries one row for the host half and none for the UI.
 

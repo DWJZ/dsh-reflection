@@ -102,7 +102,19 @@ envelope 的固定部分 —— 文件路径、指向单条文件的说明 —�
 
 `forget` 是真删，只留下不含正文的 tombstone。`archive` 保留记录但移出索引。`list` 可能截断并说明还剩多少行；`export` 从不截断 —— 它会直接报错并给出建议。
 
+`/memory digest` 每天北京时间 00:00 自动跑一次，也可以手动执行：它读取 checkpoint 之后生成的 project summary（默认过去 24 小时；`--force` 读全部），让模型展开少量记录，写出 `digest/pending.json` 与 `pending.md`。它从不写 Memory，候选只等人审查。`/memory digest --apply [1,3,...]` 把选中的候选提升为 user scope，只归档它们引用到的项目记录，并在归档记录上留下说明；应用完的批次移到 `digest/history/`。同一个队列也能在 Web UI 的设置页里审查，见下文。
+
 带空格的路径是一个参数：加引号（`bind "/Users/me/My Project"`、`relink '/Old Project' '/New Project'`）或转义空格。没闭合的引号会被拒绝并提示 `Invalid command arguments: unterminated quote.`，而不是去猜 —— 猜参数边界正是 bind 绑错目录的原因。
+
+### 审查待审队列
+
+digest 只提出候选，没人审查之前不会写入 Memory。除了命令，队列也能在 Web 界面的**设置 → 记忆**里审查：页面列出每条待审候选及其来源、产生它的扫描窗口、应用后会归档多少条项目记录，以及被校验拒绝的候选和各自的原因。
+
+- **应用**与 `/memory digest --apply` 完全一致：每条候选写一条 user scope 记录，只归档它引用到的项目记录；执行前会二次确认，因为归档会让这些来源退出所属项目的注入摘要。
+- **忽略**把选中的候选从队列移除，并把这次决定留档到 `digest/discarded/`；不写 Memory。
+- 页面在打开时、窗口重新获得焦点时、以及每次动作完成后读取队列，不做轮询。如果读取之后队列变了，动作会被拒绝并重新读取，因此不会按过期的候选编号应用。
+- 队列是个人内容：页面背后的三个路由只接受本机同源请求，响应不缓存。
+- 记忆关闭、或当前环境没有 Web 宿主时，页面给出说明，而不是提供动作。
 
 ### 配置
 
@@ -112,7 +124,7 @@ envelope 的固定部分 —— 文件路径、指向单条文件的说明 —�
 |---|---|---|
 | `enabled` | `true` | 初始状态；被 `config.json` 覆盖 |
 | `dshHome` | `$DSH_HOME`，否则 `~/.dsh` | harness home；Memory 永远在其下 |
-| `sessionEvents` | `false` | 本插件写进 Session 日志的**唯一**开关。harness 没有给插件提供 append Session event 的受支持接口，这里用的是「未知类型 + `ignorable` 标记」这条侧门，所以默认关，由部署主动开启 |
+| `sessionEvents` | `false` | 记忆整理与项目归属两类轨迹行的开关。harness 没有给插件提供 append Session event 的受支持接口，这里用的是「未知类型 + `ignorable` 标记」这条侧门，所以默认关，由部署主动开启。digest 的审计行只要当时有 Session 就会写，这是 digest 契约本身要求的 |
 | `summaryBudgetBytes` | `2400` | 注入摘要的 UTF-8 字节上限；摘要调用会被告知这个数字，为不同预算写出的缓存会在下次读取时重新生成 |
 | `summaryMinScore` | `0.5` | 摘要只描述 score 不低于该值的记录；更低的写入既不进摘要，也不会触发重写 |
 | `autoDigest` | `true` | 每天北京时间 00:00 自动跑一次跨项目 digest；关闭后仍可手动执行 |
@@ -153,8 +165,9 @@ envelope 的固定部分 —— 文件路径、指向单条文件的说明 —�
 |---|---|---|
 | `plugin:dsh-reflection/consolidation` | 本次运行的状态与触发方式、覆盖的 seq 区间，以及写了什么 —— 新增/更新/取代/无操作四个计数，有值时再补上拒绝、跳过、失败。gap 只说这段区间没有任何进程观测到，不带计数 | `success` 绿、`partial` 琥珀、`no-human-turn` 灰、`gap` 红 |
 | `plugin:dsh-reflection/project` | 项目根、由哪种查找决定（已登记路径 / workspace / 根标记），以及 project id 与 workspace id | 无 —— 归属是事实，不是结果 |
+| `plugin:dsh-reflection/digest` | 扫描：扫描窗口、提出多少候选、拒绝多少条、用的哪个模型。应用：写入多少条候选、归档多少条来源记录、还剩多少条待审 | 扫描是事实，保持灰色；应用写了东西是绿色，什么都没写是琥珀 |
 
-上表是本构建写入的名字；迁移前写下的 Session 保留旧的 `dsh-reflection/…` 名字，同一批行也照样折叠它们。两类记录都只是日志：`appendPluginRecord` 用 envelope 的 `ignorable` 标记写它们，因此永远不会进入模型请求，不认识该名字的构建会跳过它们而不是拒绝该 Session。每一行都是一条 `extension` 记录 —— 本插件自己的摘要、强调色与原始负载 —— 所以轨迹侧渲染它时不需要认识本插件的任何一个字段名，共享的详情面板里能看到写入时的审计原文。这里没有任何东西走 HTTP：这些行读的是 Session 自己的日志。
+上表是本构建写入的名字；迁移前写下的 Session 保留旧的 `dsh-reflection/…` 名字，同一批行也照样折叠它们。三类记录都只是日志：`appendPluginRecord` 用 envelope 的 `ignorable` 标记写它们，因此永远不会进入模型请求，不认识该名字的构建会跳过它们而不是拒绝该 Session。每一行都是一条 `extension` 记录 —— 本插件自己的摘要、强调色与原始负载 —— 所以轨迹侧渲染它时不需要认识本插件的任何一个字段名，共享的详情面板里能看到写入时的审计原文。轨迹行读的是 Session 自己的日志；唯一的 HTTP 面是待审队列的审查路由，只服务设置页，内容不超出待审候选本身。
 
 浏览器半由 `package.json` 的 `dsh.client` 声明，所以 bundle patch 里只有宿主半一行，UI 那半不需要第二行。
 

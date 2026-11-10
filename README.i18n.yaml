@@ -9,41 +9,44 @@
   en: 225a3b208451addb
   zh: f6699562c19ea676
 /dsh-reflection/summary:
-  en: 92a789d7cf1f9605
-  zh: 92770e86e29837c1
+  en: 61d6a00f06f11066
+  zh: deaa1f83978f8a07
 /dsh-reflection/use-this-plugin:
-  en: c87b418878728895
+  en: 74cb980232e0bf96
   zh: d99fe47480f3dd88
 /dsh-reflection/use-this-plugin/where-memory-lives:
-  en: 64f6d7687e6fbf04
-  zh: 917d9305a37e398a
+  en: e88a1060828be733
+  zh: c2770b860bc035be
 /dsh-reflection/use-this-plugin/what-the-model-gets:
-  en: 726a73637ad1cef4
-  zh: cc185b6c30063cb2
+  en: 97a74707238a2916
+  zh: 2d5e02f2db07f995
 /dsh-reflection/use-this-plugin/commands:
-  en: bd0da0ffa6df2c23
-  zh: bc64b2e1a24ebefe
+  en: 7d76e4c3bbe41404
+  zh: 2eb3d8249baa880c
+/dsh-reflection/use-this-plugin/reviewing-the-pending-queue:
+  en: a96c6a44da6f62f4
+  zh: 0f26f6e765be30f6
 /dsh-reflection/use-this-plugin/configuration:
-  en: 4c63c95c0a261a01
-  zh: 6a6931483b5420df
+  en: 9c0e5ae5d4395c31
+  zh: 4500489d4ec9491e
 /dsh-reflection/use-this-plugin/project-identity:
   en: 958a3d2248f9e133
   zh: ee38df2d8ee692fe
 /dsh-reflection/use-this-plugin/trajectory-rows:
-  en: e8f637bd305d2146
-  zh: 053f4d455c23a3f1
+  en: c74f74e00a5644b8
+  zh: ceda452627ec934f
 /dsh-reflection/understand-the-implementation:
-  en: cb569b4f2b00ea45
-  zh: 6786f5f17207e8c4
+  en: caeaeda81e4d5a01
+  zh: bb985db6109efa09
 /dsh-reflection/model-experience:
-  en: 2cd2a68f9b56e8eb
-  zh: b8fbdd50ee30723b
+  en: 42fd0d697c99ae7a
+  zh: 43f07c079d2f8d87
 /dsh-reflection/known-limitations-and-deferred-work:
-  en: 0deccd5bf7a8db8c
-  zh: aeb697d6b07a134a
+  en: 0e2b696b954a69d8
+  zh: 45e85da0d10cf4df
 /dsh-reflection/tests:
-  en: 2cbf3d66d429d74d
-  zh: d7e01d284cdfbbe3
+  en: 68ec2311ea80f4b1
+  zh: cdac24dc51772b49
 /dsh-reflection/tests/development-loop:
   en: 5866d403bc5d3611
   zh: 76a8f9df1ee73c5a
